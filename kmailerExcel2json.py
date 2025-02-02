@@ -1,6 +1,6 @@
 import openpyxl
 from openpyxl.utils import get_column_letter, column_index_from_string
-from openpyxl.styles import Alignment
+from openpyxl.styles import Alignment, Border, Side, PatternFill
 from datetime import datetime
 import json
 import sys
@@ -145,6 +145,8 @@ class ExcelJsonConverter:
         変換したJSONデータ（リスト）を JSON 形式と YAML 形式に変換し、
         複製シートの最終行から offset 行下に出力します。
         JSON は A列、YAML は B列に出力し、各セルの書式をテキスト形式かつ折り返し表示に設定します。
+        また、JSON/YAMLの出力セルの１つ上のセルにタイトル（出力JSON、出力YAML）を
+        背景を明るい紫色にし、タイトルと内容を罫線で囲むようにします。
         """
         ws = self.duplicate_ws
         json_text = json.dumps(json_data, ensure_ascii=False, indent=2)
@@ -152,14 +154,42 @@ class ExcelJsonConverter:
 
         last_row = ws.max_row
         output_row = last_row + offset
+        title_row = output_row - 1  # タイトルを出力する行
 
+        # 罫線の設定（全辺に薄い線）
+        thin_border = Border(
+            left=Side(style='thin'),
+            right=Side(style='thin'),
+            top=Side(style='thin'),
+            bottom=Side(style='thin')
+        )
+
+        # タイトルセルの背景（明るい紫色：lavender）
+        title_fill = PatternFill(fill_type='solid', start_color='E6E6FA')
+
+        # JSONタイトルセルの設定
+        json_title_cell = ws.cell(row=title_row, column=1, value="出力JSON")
+        json_title_cell.fill = title_fill
+        json_title_cell.border = thin_border
+        json_title_cell.alignment = Alignment(horizontal="center", vertical="center")
+
+        # YAMLタイトルセルの設定
+        yaml_title_cell = ws.cell(row=title_row, column=2, value="出力YAML")
+        yaml_title_cell.fill = title_fill
+        yaml_title_cell.border = thin_border
+        yaml_title_cell.alignment = Alignment(horizontal="center", vertical="center")
+
+        # JSON出力セルの設定
         json_cell = ws.cell(row=output_row, column=1, value=json_text)
         json_cell.number_format = "@"
         json_cell.alignment = Alignment(wrap_text=True)
+        json_cell.border = thin_border
 
+        # YAML出力セルの設定
         yaml_cell = ws.cell(row=output_row, column=2, value=yaml_text)
         yaml_cell.number_format = "@"
         yaml_cell.alignment = Alignment(wrap_text=True)
+        yaml_cell.border = thin_border
 
     def save(self, output_file):
         """Workbook を指定のファイル名で保存します。"""
