@@ -140,6 +140,27 @@ class ExcelJsonConverter:
             data_list.append(record)
         return data_list
 
+    def _set_title_cell(self, ws, row, column, text, fill, border):
+        """
+        指定されたセルにタイトル用の値とスタイルを設定して返します。
+        """
+        cell = ws.cell(row=row, column=column, value=text)
+        cell.fill = fill
+        cell.border = border
+        cell.alignment = Alignment(horizontal="center", vertical="center")
+        return cell
+
+    def _setup_output_cell(self, ws, row, column, text, border):
+        """
+        指定されたセルにテキストを設定し、テキスト形式(@)、
+        折り返し表示、罫線を設定したセルオブジェクトを返します。
+        """
+        cell = ws.cell(row=row, column=column, value=text)
+        cell.number_format = "@"
+        cell.alignment = Alignment(wrap_text=True)
+        cell.border = border
+        return cell
+
     def output_json_yaml(self, json_data, offset=10):
         """
         変換したJSONデータ（リスト）を JSON 形式と YAML 形式に変換し、
@@ -167,29 +188,14 @@ class ExcelJsonConverter:
         # タイトルセルの背景（明るい紫色：lavender）
         title_fill = PatternFill(fill_type='solid', start_color='E6E6FA')
 
-        # JSONタイトルセルの設定
-        json_title_cell = ws.cell(row=title_row, column=1, value="出力JSON")
-        json_title_cell.fill = title_fill
-        json_title_cell.border = thin_border
-        json_title_cell.alignment = Alignment(horizontal="center", vertical="center")
+        # タイトルセルは既存の _set_title_cell() を使用
+        self._set_title_cell(ws, title_row, 1, "出力JSON", title_fill, thin_border)
+        self._set_title_cell(ws, title_row, 2, "出力YAML", title_fill, thin_border)
 
-        # YAMLタイトルセルの設定
-        yaml_title_cell = ws.cell(row=title_row, column=2, value="出力YAML")
-        yaml_title_cell.fill = title_fill
-        yaml_title_cell.border = thin_border
-        yaml_title_cell.alignment = Alignment(horizontal="center", vertical="center")
-
-        # JSON出力セルの設定
-        json_cell = ws.cell(row=output_row, column=1, value=json_text)
-        json_cell.number_format = "@"
-        json_cell.alignment = Alignment(wrap_text=True)
-        json_cell.border = thin_border
-
-        # YAML出力セルの設定
-        yaml_cell = ws.cell(row=output_row, column=2, value=yaml_text)
-        yaml_cell.number_format = "@"
-        yaml_cell.alignment = Alignment(wrap_text=True)
-        yaml_cell.border = thin_border
+        # JSON出力セルの設定（リファクタ後）
+        json_cell = self._setup_output_cell(ws, output_row, 1, json_text, thin_border)
+        # YAML出力セルの設定（リファクタ後）
+        yaml_cell = self._setup_output_cell(ws, output_row, 2, yaml_text, thin_border)
 
     def save(self, output_file):
         """Workbook を指定のファイル名で保存します。"""
