@@ -120,35 +120,17 @@ class ExcelJsonConverter:
         """
         複製シート内のデータ行（A列が "#JSON_DATA" の行）を、  
         ヘッダー定義に沿ってネスト構造の辞書へ変換します。
-        
-        処理の手順：
-          1. A列の値が "#JSON_DATA" で始まる行を新規レコード行として処理する。
-          2. 先読みで、A列が "*"（継続行）で始まる行があれば同レコードにマージする。
-          3. 各セルの値は、ヘッダー定義に従ってネストされた構造に配置する。
-          
-        ※ これにより、たとえば以下のヘッダー定義の場合、
-            #JSON_START,,#mailTemplates$1,#mailTemplates$1,#mailTemplates$1
-            #JSON_START,,#webhook,#conditions,#conditions
-            #JSON_START,,,#operator,#rules
 
-            データ行
-            #JSON_DATA,$1,aaa1,aaa2,aaa3
-            #JSON_DATA,$1,bbb1,bbb2,bbb3
+        ・メイン行（A列が "#JSON_DATA" の行）の各セルについて、
+          ヘッダー定義に "$" 指定子があれば、該当フィールドは単一のオブジェクトではなく、
+          配列要素として格納します。
+        ・継続行（B列に "$" 指定がある行）も同様に、対応する配列の新しい要素として処理します。
 
-            はそれぞれ独立したレコードとして出力され、結果は
-
-            - mailTemplates:
-                webhook: aaa1
-                conditions:
-                  operator: aaa2
-                  rules: aaa3
-            - mailTemplates:
-                webhook: bbb1
-                conditions:
-                  operator: bbb2
-                  rules: bbb3
-
-            のようになります。
+        例として、Excel内のヘッダーが以下の場合：
+          #JSON_START, #mailSet, #mailSet, #mailTemplates$1, #mailTemplates$1, #mailTemplates$1
+          (各セルの下段にフィールド名が設定されている想定)
+        メイン行に mailTemplates 系の値があれば、それは最初の配列要素となり、
+        継続行の mailTemplates 系の値は、その配列に新たな要素として追加されます。
         """
         ws = self.duplicate_ws
         header_hierarchy = self._build_header_hierarchy()
@@ -162,98 +144,88 @@ class ExcelJsonConverter:
         while i < len(rows):
             row = rows[i]
             marker = row[0].value
-            print(f"marker: {marker}")
-            # A列が "#JSON_DATA" で始まる行を新規レコード行として処理する
+            # メインレコード行として "#JSON_DATA" で始まる行を選択
             if marker is None or not isinstance(marker, str) or not marker.strip().startswith("#JSON_DATA"):
                 i += 1
                 continue
 
-            # 新規レコードのグループは最初の行のみとする
+            # 新規レコード行グループの取得（メイン行と継続行）
             group_rows = [row]
             i += 1
-
-            # 継続行は B列が "$" で始まる場合のみ追加
             while i < len(rows):
                 next_row = rows[i]
-                next_marker = next_row[1].value
-                print(f"next_marker: {next_marker}")
-                if next_marker is not None : #and isinstance(next_marker, str) and next_marker.startswith("$"):
+                # B列（インデックス1）の値が存在する場合は継続行と見なす
+                next_marker = next_row[1].value if len(next_row) > 1 else None
+                if next_marker is not None:
                     group_rows.append(next_row)
-                    print("継続行として追加します。")
                     i += 1
-
                 else:
                     break
 
-            # グループの最初の行から新規レコードを作成
             new_record = {}
+            temp_arrays = {}  # メイン行の array 指定項目（例：mailTemplates）の一時格納領域
+
+            # 【メイン行の処理】
             main_row = group_rows[0]
             main_row_num = main_row[0].row
             for col_letter, header_defs in header_hierarchy.items():
                 col_idx = column_index_from_string(col_letter)
                 cell_val = ws.cell(row=main_row_num, column=col_idx).value
-                cur = new_record
-                for j, level in enumerate(header_defs):
-                    key = level["key"]
-                    if j == len(header_defs) - 1:
-                        cur[key] = cell_val
-                    else:
-                        if key not in cur:
-                            cur[key] = {}
-                        cur = cur[key]
 
-            # 継続行があれば、各継続行からデータを取り出し、対応する $ 配列グループとしてマージする
+                # ヘッダー定義内に "$" 指定子があれば array 項目として扱う
+                if any(level.get("arr") for level in header_defs):
+                    # 最初に見つかった array 指定子のキーを配列のルートキーとする
+                    array_root_key = None
+                    for level in header_defs:
+                        if level.get("arr"):
+                            array_root_key = level["key"]
+                            break
+                    # プロパティ名は、チェーンの最後のキー名（例：#mailTemplates$1 の後段にフィールド名が定義されている場合）
+                    prop_name = header_defs[-1]["key"] if len(header_defs) > 1 else array_root_key
+                    if array_root_key not in temp_arrays:
+                        temp_arrays[array_root_key] = {}
+                    temp_arrays[array_root_key][prop_name] = cell_val
+                else:
+                    # 通常のネスト構造の設定
+                    cur = new_record
+                    for j, level in enumerate(header_defs):
+                        key = level["key"]
+                        if j == len(header_defs) - 1:
+                            cur[key] = cell_val
+                        else:
+                            if key not in cur:
+                                cur[key] = {}
+                            cur = cur[key]
+            # メイン行で取得した array 指定項目を new_record に挿入（配列の要素として格納）
+            for arr_key, arr_value in temp_arrays.items():
+                new_record[arr_key] = [arr_value]
+
+            # 【継続行の処理】
+            # 各継続行は、array 項目の新要素として別個に追加する
             for cont_row in group_rows[1:]:
                 cont_row_num = cont_row[0].row
-                directive = ws.cell(row=cont_row_num, column=2).value  # 例: "*$1" の場合がある
-                print(f"directive: {directive}")
-                #if directive and isinstance(directive, str):
-                #    directive = directive.lstrip("$").strip()  # "$"を除去
-                # else:
-                #    continue
-                prev_directive = ''
-                for col_letter, header_defs in header_hierarchy.items():
-                    for idx, level in enumerate(header_defs):
-                        # 指定された配列グループ名と一致するか確認
-                        if level.get("arr") == f'${directive}':
-                            prefix = [ld["key"] for ld in header_defs[:idx]]
-                            array_key = header_defs[idx]["key"]
-                            remainder = [ld["key"] for ld in header_defs[idx+1:]]
+                directive = ws.cell(row=cont_row_num, column=2).value
+                if directive is None:
+                    continue
 
+                cont_obj = {}
+                array_root_key = None
+                # 各列について、該当する array 指定子のセルを探す
+                for col_letter, header_defs in header_hierarchy.items():
+                    for level in header_defs:
+                        if level.get("arr") == f'${directive}':
+                            array_root_key = level["key"]
+                            prop_name = header_defs[-1]["key"] if len(header_defs) > 1 else array_root_key
                             col_idx = column_index_from_string(col_letter)
                             cell_val = ws.cell(row=cont_row_num, column=col_idx).value
-
-                            # マージ先オブジェクトを取得（prefixに沿って辿る）
-                            cur_obj = new_record
-                            for key in prefix:
-                                if key not in cur_obj:
-                                    cur_obj[key] = {}
-                                cur_obj = cur_obj[key]
-
-                            # 配列が存在しない場合は作成
-                            if array_key not in cur_obj:
-                                cur_obj[array_key] = []  # 確実に配列として初期化
-                            elif not isinstance(cur_obj[array_key], list):
-                                # もし既存の値が配列でない場合は配列に変換
-                                cur_obj[array_key] = [cur_obj[array_key]]
-
-                            # 新しい要素が必要な場合は作成
-                            if not cur_obj[array_key] or prev_directive is not None and directive != prev_directive:
-                                cur_obj[array_key].append({})
-                                prev_directive = directive
-
-                            # 最後の要素に追加
-                            target_elem = cur_obj[array_key][-1]
-                            
-                            # remainderに従って階層を作成
-                            current = target_elem
-                            for rkey in remainder[:-1]:
-                                if rkey not in current:
-                                    current[rkey] = {}
-                                current = current[rkey]
-                            if remainder:
-                                current[remainder[-1]] = cell_val
+                            cont_obj[prop_name] = cell_val
                             break
+                # 指定された array 項目に継続行のデータを追加
+                if cont_obj and array_root_key:
+                    if array_root_key not in new_record:
+                        new_record[array_root_key] = []
+                    new_record[array_root_key].append(cont_obj)
+
             data_list.append(new_record)
         return data_list
 
