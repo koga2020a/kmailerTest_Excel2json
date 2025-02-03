@@ -122,20 +122,26 @@ class ExcelJsonConverter:
         ヘッダー定義に沿ってネスト構造の辞書へ変換します。
 
         ・メイン行（A列が "#JSON_DATA" の行）の各セルについて、
-          ヘッダー定義に "$" 指定子があれば、該当フィールドは単一のオブジェクトではなく、
-          配列要素として格納します。
-        ・継続行（B列に "$" 指定がある行）も同様に、対応する配列の新しい要素として処理します。
-
-        例として、Excel内のヘッダーが以下の場合：
-          #JSON_START, #mailSet, #mailSet, #mailTemplates$1, #mailTemplates$1, #mailTemplates$1
-          (各セルの下段にフィールド名が設定されている想定)
-        メイン行に mailTemplates 系の値があれば、それは最初の配列要素となり、
-        継続行の mailTemplates 系の値は、その配列に新たな要素として追加されます。
+          ヘッダー定義に "$" 指定子が含まれる場合は、そのセルの値を対応する配列要素の
+          ネスト構造として格納します（複数段の階層に対応）。
+        ・継続行（B列に "$" 指定がある行）は、同じ array 項目の新しい配列要素として追加されます。
         """
         ws = self.duplicate_ws
         header_hierarchy = self._build_header_hierarchy()
         if header_hierarchy is None:
             return None
+
+        # ヘルパー関数：キーのリストに沿って辞書を更新する（再帰的に入れ子構造に値を設定）
+        def nested_update(d, keys, value):
+            if not keys:
+                return  # keys が空の場合は何もしない
+            key = keys[0]
+            if len(keys) == 1:
+                d[key] = value
+            else:
+                if key not in d or not isinstance(d[key], dict):
+                    d[key] = {}
+                nested_update(d[key], keys[1:], value)
 
         data_list = []
         rows = list(ws.iter_rows(min_row=1, max_row=ws.max_row))
@@ -144,17 +150,15 @@ class ExcelJsonConverter:
         while i < len(rows):
             row = rows[i]
             marker = row[0].value
-            # メインレコード行として "#JSON_DATA" で始まる行を選択
             if marker is None or not isinstance(marker, str) or not marker.strip().startswith("#JSON_DATA"):
                 i += 1
                 continue
 
-            # 新規レコード行グループの取得（メイン行と継続行）
+            # メイン行と継続行のグループ取得
             group_rows = [row]
             i += 1
             while i < len(rows):
                 next_row = rows[i]
-                # B列（インデックス1）の値が存在する場合は継続行と見なす
                 next_marker = next_row[1].value if len(next_row) > 1 else None
                 if next_marker is not None:
                     group_rows.append(next_row)
@@ -163,7 +167,7 @@ class ExcelJsonConverter:
                     break
 
             new_record = {}
-            temp_arrays = {}  # メイン行の array 指定項目（例：mailTemplates）の一時格納領域
+            temp_arrays = {}  # メイン行における array 指定項目の一時格納用
 
             # 【メイン行の処理】
             main_row = group_rows[0]
@@ -172,21 +176,22 @@ class ExcelJsonConverter:
                 col_idx = column_index_from_string(col_letter)
                 cell_val = ws.cell(row=main_row_num, column=col_idx).value
 
-                # ヘッダー定義内に "$" 指定子があれば array 項目として扱う
-                if any(level.get("arr") for level in header_defs):
-                    # 最初に見つかった array 指定子のキーを配列のルートキーとする
-                    array_root_key = None
-                    for level in header_defs:
-                        if level.get("arr"):
-                            array_root_key = level["key"]
-                            break
-                    # プロパティ名は、チェーンの最後のキー名（例：#mailTemplates$1 の後段にフィールド名が定義されている場合）
-                    prop_name = header_defs[-1]["key"] if len(header_defs) > 1 else array_root_key
+                # ヘッダーの中に array 指定子（"$" 指定）があるかチェック
+                arr_index = None
+                for idx, level in enumerate(header_defs):
+                    if level.get("arr"):
+                        arr_index = idx
+                        break
+
+                if arr_index is not None:
+                    array_root_key = header_defs[arr_index]["key"]
+                    # array 指定子以降の階層をキーリストとして取り出す
+                    sub_keys = [level["key"] for level in header_defs[arr_index+1:]]
                     if array_root_key not in temp_arrays:
                         temp_arrays[array_root_key] = {}
-                    temp_arrays[array_root_key][prop_name] = cell_val
+                    nested_update(temp_arrays[array_root_key], sub_keys, cell_val)
                 else:
-                    # 通常のネスト構造の設定
+                    # 通常のネスト構造として値を設定
                     cur = new_record
                     for j, level in enumerate(header_defs):
                         key = level["key"]
@@ -196,12 +201,12 @@ class ExcelJsonConverter:
                             if key not in cur:
                                 cur[key] = {}
                             cur = cur[key]
-            # メイン行で取得した array 指定項目を new_record に挿入（配列の要素として格納）
-            for arr_key, arr_value in temp_arrays.items():
-                new_record[arr_key] = [arr_value]
+
+            # メイン行で取得した array 項目を new_record に格納（配列として）
+            for arr_key, arr_val in temp_arrays.items():
+                new_record[arr_key] = [arr_val]
 
             # 【継続行の処理】
-            # 各継続行は、array 項目の新要素として別個に追加する
             for cont_row in group_rows[1:]:
                 cont_row_num = cont_row[0].row
                 directive = ws.cell(row=cont_row_num, column=2).value
@@ -210,17 +215,17 @@ class ExcelJsonConverter:
 
                 cont_obj = {}
                 array_root_key = None
-                # 各列について、該当する array 指定子のセルを探す
+                # 各列について、directive に一致する array 指定のあるヘッダーを探す
                 for col_letter, header_defs in header_hierarchy.items():
-                    for level in header_defs:
+                    for idx, level in enumerate(header_defs):
                         if level.get("arr") == f'${directive}':
-                            array_root_key = level["key"]
-                            prop_name = header_defs[-1]["key"] if len(header_defs) > 1 else array_root_key
+                            array_root_key = header_defs[idx]["key"]
+                            sub_keys = [l["key"] for l in header_defs[idx+1:]]
                             col_idx = column_index_from_string(col_letter)
                             cell_val = ws.cell(row=cont_row_num, column=col_idx).value
-                            cont_obj[prop_name] = cell_val
+                            nested_update(cont_obj, sub_keys, cell_val)
                             break
-                # 指定された array 項目に継続行のデータを追加
+
                 if cont_obj and array_root_key:
                     if array_root_key not in new_record:
                         new_record[array_root_key] = []
