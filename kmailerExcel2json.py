@@ -6,6 +6,7 @@ import json
 import sys
 import yaml  # PyYAML を利用。事前に pip install pyyaml を実施してください。
 import os  # ファイル名操作用
+import re
 
 class ExcelJsonConverter:
     def __init__(self, input_file):
@@ -102,11 +103,18 @@ class ExcelJsonConverter:
                             break
                 if cell_value and isinstance(cell_value, str) and cell_value.strip().startswith("#"):
                     key_text = cell_value.strip().lstrip("#").strip()
-                    # '$' 以降は配列指示子として扱う
-                    if '$' in key_text:
-                        parts = key_text.split('$', 1)
-                        key_name = parts[0].strip()
-                        array_directive = '$' + parts[1].strip() if parts[1].strip() != "" else None
+                    # 正規表現でキー名と配列指示子およびグループ名を抽出する
+                    m = re.match(r"^(.*?)\$(\d+)(.*)$", key_text)
+                    if m:
+                        base_key = m.group(1).strip()
+                        digit = m.group(2).strip()
+                        group_name = m.group(3).strip()
+                        # ここではグループ名があればキー名に結合する例
+                        if group_name:
+                            key_name = base_key + group_name
+                        else:
+                            key_name = base_key
+                        array_directive = f"${digit}"
                     else:
                         key_name = key_text
                         array_directive = None
@@ -118,23 +126,28 @@ class ExcelJsonConverter:
 
     def convert_sheet_to_json(self):
         """
-        複製シート内のデータ行（A列が "#JSON_DATA" の行）を、  
+        複製シート内のデータ行（A列が "#JSON_DATA" の行）を、
         ヘッダー定義に沿ってネスト構造の辞書へ変換します。
 
-        ・メイン行（A列が "#JSON_DATA" の行）の各セルについて、
-          ヘッダー定義に "$" 指定子が含まれる場合は、そのセルの値を対応する配列要素の
-          ネスト構造として格納します（複数段の階層に対応）。
-        ・継続行（B列に "$" 指定がある行）は、同じ array 項目の新しい配列要素として追加されます。
+        各列ごとに個別のキー階層として処理していたのを、  
+        同一の親キー（例："mailSet", "mailTemplates" など）が各列に出現している場合、  
+        グローバルな一つの構造として統合するように変更しています。
+
+        ・メイン行では、ヘッダー定義に配列指定子がある場合、  
+          親パス（例：["mailSet", "mailTemplates"]）を辿った上で、  
+          対象の配列の最初の要素に各セルの値を統合します。
+
+        ・継続行（B列に "$" 指定がある行）は、  
+          同じ親パス・配列キー毎に集約し、新しい配列要素として追加します。
         """
         ws = self.duplicate_ws
         header_hierarchy = self._build_header_hierarchy()
         if header_hierarchy is None:
             return None
 
-        # ヘルパー関数：キーのリストに沿って辞書を更新する（再帰的に入れ子構造に値を設定）
         def nested_update(d, keys, value):
             if not keys:
-                return  # keys が空の場合は何もしない
+                return  # keysが空なら何もしない
             key = keys[0]
             if len(keys) == 1:
                 d[key] = value
@@ -142,6 +155,51 @@ class ExcelJsonConverter:
                 if key not in d or not isinstance(d[key], dict):
                     d[key] = {}
                 nested_update(d[key], keys[1:], value)
+
+        def update_record_with_header(record, header_defs, value):
+            """
+            ヘッダー定義（header_defs）に沿って、record の適切な位置に value を設定する。
+            header_defs は例として以下のような構造のリスト：
+              [{"key": "mailSet", "arr": None},
+               {"key": "mailTemplates", "arr": None},
+               {"key": "conditions", "arr": "$1"},
+               {"key": "operator", "arr": None}]
+            であれば、配列指定子が存在する位置（この例では index 2）の前までは親パスとなる。
+            メイン行の場合は、配列指定があるならその配列の最初の要素に統合します。
+            """
+            arr_index = None
+            for idx, level in enumerate(header_defs):
+                if level.get("arr"):
+                    arr_index = idx
+                    break
+
+            if arr_index is None:
+                # 配列指定子がない場合、単純なネスト更新
+                current = record
+                for j, level in enumerate(header_defs):
+                    key = level["key"]
+                    if j == len(header_defs) - 1:
+                        current[key] = value
+                    else:
+                        if key not in current or not isinstance(current[key], dict):
+                            current[key] = {}
+                        current = current[key]
+            else:
+                # 配列指定子がある場合、親パスと配列部分に分離する。
+                parent_path = [l["key"] for l in header_defs[:arr_index]]
+                array_key = header_defs[arr_index]["key"]
+                sub_keys = [l["key"] for l in header_defs[arr_index+1:]]
+                current = record
+                for key in parent_path:
+                    if key not in current or not isinstance(current[key], dict):
+                        current[key] = {}
+                    current = current[key]
+                if array_key not in current:
+                    current[array_key] = []
+                # メイン行では、同じ親パス内で各列の値は同一の配列要素に統合
+                if len(current[array_key]) == 0:
+                    current[array_key].append({})
+                nested_update(current[array_key][0], sub_keys, value)
 
         data_list = []
         rows = list(ws.iter_rows(min_row=1, max_row=ws.max_row))
@@ -154,82 +212,55 @@ class ExcelJsonConverter:
                 i += 1
                 continue
 
-            # メイン行と継続行のグループ取得
-            group_rows = [row]
-            i += 1
-            while i < len(rows):
-                next_row = rows[i]
-                next_marker = next_row[1].value if len(next_row) > 1 else None
-                if next_marker is not None:
-                    group_rows.append(next_row)
-                    i += 1
-                else:
-                    break
-
             new_record = {}
-            temp_arrays = {}  # メイン行における array 指定項目の一時格納用
-
-            # 【メイン行の処理】
-            main_row = group_rows[0]
+            main_row = row
             main_row_num = main_row[0].row
+
+            # メイン行：各列のセルの値を header_hierarchy を使って統合更新する
             for col_letter, header_defs in header_hierarchy.items():
                 col_idx = column_index_from_string(col_letter)
                 cell_val = ws.cell(row=main_row_num, column=col_idx).value
+                update_record_with_header(new_record, header_defs, cell_val)
 
-                # ヘッダーの中に array 指定子（"$" 指定）があるかチェック
-                arr_index = None
-                for idx, level in enumerate(header_defs):
-                    if level.get("arr"):
-                        arr_index = idx
-                        break
+            i += 1
 
-                if arr_index is not None:
-                    array_root_key = header_defs[arr_index]["key"]
-                    # array 指定子以降の階層をキーリストとして取り出す
-                    sub_keys = [level["key"] for level in header_defs[arr_index+1:]]
-                    if array_root_key not in temp_arrays:
-                        temp_arrays[array_root_key] = {}
-                    nested_update(temp_arrays[array_root_key], sub_keys, cell_val)
-                else:
-                    # 通常のネスト構造として値を設定
-                    cur = new_record
-                    for j, level in enumerate(header_defs):
-                        key = level["key"]
-                        if j == len(header_defs) - 1:
-                            cur[key] = cell_val
-                        else:
-                            if key not in cur:
-                                cur[key] = {}
-                            cur = cur[key]
-
-            # メイン行で取得した array 項目を new_record に格納（配列として）
-            for arr_key, arr_val in temp_arrays.items():
-                new_record[arr_key] = [arr_val]
-
-            # 【継続行の処理】
-            for cont_row in group_rows[1:]:
-                cont_row_num = cont_row[0].row
-                directive = ws.cell(row=cont_row_num, column=2).value
+            # 継続行の処理（メイン行に続く、B列に指示（例："$1"）がある行）
+            while i < len(rows):
+                next_row = rows[i]
+                directive = None
+                if len(next_row) > 1:
+                    directive = next_row[1].value
                 if directive is None:
-                    continue
+                    break
 
-                cont_obj = {}
-                array_root_key = None
-                # 各列について、directive に一致する array 指定のあるヘッダーを探す
+                # 複数の列で同じ親パス・配列キーに該当する場合、グループで統合するため cont_updates を用意
+                cont_updates = {}  # key: (親キータプル, 配列キー)、value: 継続行の各列の更新用辞書
+                cont_row_num = next_row[0].row
                 for col_letter, header_defs in header_hierarchy.items():
                     for idx, level in enumerate(header_defs):
                         if level.get("arr") == f'${directive}':
-                            array_root_key = header_defs[idx]["key"]
+                            parent_path = tuple(l["key"] for l in header_defs[:idx])
+                            array_key = header_defs[idx]["key"]
                             sub_keys = [l["key"] for l in header_defs[idx+1:]]
                             col_idx = column_index_from_string(col_letter)
                             cell_val = ws.cell(row=cont_row_num, column=col_idx).value
-                            nested_update(cont_obj, sub_keys, cell_val)
+                            key = (parent_path, array_key)
+                            if key not in cont_updates:
+                                cont_updates[key] = {}
+                            nested_update(cont_updates[key], sub_keys, cell_val)
                             break
 
-                if cont_obj and array_root_key:
-                    if array_root_key not in new_record:
-                        new_record[array_root_key] = []
-                    new_record[array_root_key].append(cont_obj)
+                # 継続行の各更新内容を、該当する親階層の配列に新たな要素として追加する
+                for (parent_path, array_key), update_dict in cont_updates.items():
+                    current = new_record
+                    for k in parent_path:
+                        if k not in current or not isinstance(current[k], dict):
+                            current[k] = {}
+                        current = current[k]
+                    if array_key not in current:
+                        current[array_key] = []
+                    current[array_key].append(update_dict)
+                i += 1
 
             data_list.append(new_record)
         return data_list
