@@ -19,6 +19,53 @@ class HeaderDefinition:
         self.hierarchy = {}  # key: 列文字（例 "B", "C", ...）、value: ヘッダー定義リスト
         self.parse_headers()
 
+    def _parse_header_text(self, header_text):
+        """
+        ヘッダーセルのテキストから、複数の "キー名$グループ名" 形式に対応したキー階層リストを返します。
+        
+        例:
+          "#mailTemplates"               -> [{"key": "mailTemplates", "arr": None}]
+          "#mailTemplates$1"             -> [{"key": "mailTemplates", "arr": "$1"}]
+          "#mailTemplates$1グループA"     -> [{"key": "mailTemplatesグループA", "arr": "$1"}]   ※従来の動作
+          "#A$1B$2C"                    -> [{"key": "A", "arr": "$1"}, {"key": "B", "arr": "$2"}, {"key": "C", "arr": None}]
+        """
+        text = header_text.lstrip("#").strip()
+        parts = text.split("$")
+        if len(parts) == 1:
+            return [{"key": parts[0].strip(), "arr": None}]
+        elif len(parts) == 2:
+            # $が1つの場合は従来の動作と同様に、キー名と$以降の数字（および追加文字列）を結合する
+            m = re.match(r"^(\d+)(.*)$", parts[1].strip())
+            if m:
+                digit = m.group(1)
+                extra = m.group(2).strip()
+                if extra:
+                    key_name = parts[0].strip() + extra
+                else:
+                    key_name = parts[0].strip()
+                return [{"key": key_name, "arr": "$" + digit}]
+            else:
+                return [{"key": text, "arr": None}]
+        else:
+            # 複数の $ が存在する場合、各部分を階層として分解する
+            levels = []
+            current = {"key": parts[0].strip(), "arr": None}
+            levels.append(current)
+            for part in parts[1:]:
+                m = re.match(r"^(\d+)(.*)$", part.strip())
+                if m:
+                    digit = m.group(1)
+                    extra = m.group(2).strip()
+                    current["arr"] = "$" + digit
+                    if extra:
+                        new_level = {"key": extra, "arr": None}
+                        levels.append(new_level)
+                        current = new_level
+                    # extraが空の場合は、新たな階層は作成しない
+                else:
+                    continue
+            return levels
+
     def parse_headers(self):
         header_rows = []
         for row in self.ws.iter_rows(min_row=1, max_row=self.ws.max_row):
@@ -42,34 +89,80 @@ class HeaderDefinition:
                             cell_value = self.ws.cell(row=merged_range.min_row, column=merged_range.min_col).value
                             break
                 if cell_value and isinstance(cell_value, str) and cell_value.strip().startswith("#"):
-                    key_text = cell_value.strip().lstrip("#").strip()
-                    # 正規表現で「キー名」「配列指示子（数字部分）」およびグループ名を抽出する
-                    m = re.match(r"^(.*?)\$(\d+)(.*)$", key_text)
-                    if m:
-                        base_key = m.group(1).strip()
-                        digit = m.group(2).strip()
-                        group_name = m.group(3).strip()
-                        # グループ名があればキー名に結合する例
-                        if group_name:
-                            key_name = base_key + group_name
-                        else:
-                            key_name = base_key
-                        array_directive = f"${digit}"
-                    else:
-                        key_name = key_text
-                        array_directive = None
+                    header_defs = self._parse_header_text(cell_value)
                     col_letter = get_column_letter(cell.column)
                     if col_letter not in self.hierarchy:
                         self.hierarchy[col_letter] = []
-                    self.hierarchy[col_letter].append({"key": key_name, "arr": array_directive})
+                    self.hierarchy[col_letter].extend(header_defs)
+
+class ContinuationMerger:
+    """
+    継続行のディレクティブ（B列が "$1" や "$2" など）に応じて、
+    ヘッダー定義に基づく対象キーの位置へ値をマージするためのクラスです。
+    """
+    def __init__(self, header_mapping, ws):
+        self.header_mapping = header_mapping
+        self.ws = ws
+
+    def merge_row(self, record, cont_row):
+        # B列（2番目のセル）からディレクティブを取得
+        directive = cont_row[1].value if len(cont_row) > 1 else None
+        if not directive or not isinstance(directive, str) or not directive.startswith("$"):
+            return record  # 空欄または "$" で始まらない場合は処理しない
+        # 各列に対して、ヘッダー定義の中から該当ディレクティブの位置を探す
+        for col_letter, header_defs in self.header_mapping.items():
+            for idx, level in enumerate(header_defs):
+                if level.get("arr") == directive:
+                    # 該当するヘッダー定義の階層情報を分解
+                    parent_path = [l["key"] for l in header_defs[:idx]]
+                    array_key = header_defs[idx]["key"]
+                    sub_keys = [l["key"] for l in header_defs[idx+1:]]
+                    col_idx = column_index_from_string(col_letter)
+                    cell_val = self.ws.cell(row=cont_row[0].row, column=col_idx).value
+                    # 新規または既存の親オブジェクトにアクセス
+                    current = record
+                    for key in parent_path:
+                        if key not in current or not isinstance(current[key], dict):
+                            current[key] = {}
+                        current = current[key]
+                    # 配列キーがなければ新規作成
+                    if array_key not in current:
+                        current[array_key] = []
+                    # sub_keys が存在するなら、既存の末尾オブジェクトにマージ、
+                    # なければ新規作成してリストに追加する
+                    if sub_keys:
+                        if current[array_key] and isinstance(current[array_key][-1], dict):
+                            self._nested_update(current[array_key][-1], sub_keys, cell_val)
+                        else:
+                            new_obj = {}
+                            self._nested_update(new_obj, sub_keys, cell_val)
+                            current[array_key].append(new_obj)
+                    else:
+                        current[array_key].append(cell_val)
+                    break  # 1列につき1度処理すればよいのでbreak
+        return record
+
+    def _nested_update(self, d, keys, value):
+        """シンプルにネストされた辞書を更新します。"""
+        if not keys:
+            return
+        key = keys[0]
+        if len(keys) == 1:
+            d[key] = value
+        else:
+            if key not in d or not isinstance(d[key], dict):
+                d[key] = {}
+            self._nested_update(d[key], keys[1:], value)
+
 
 class RowDataProcessor:
     """
     ヘッダ情報（HeaderDefinition）をもとに、複製シート内のデータ行（A列が "#JSON_DATA" の行）を
-    ネスト構造の辞書へ変換するクラスです。
+    ネスト構造の辞書へ変換します。
     
     メイン行では、各列のセルの値を対応するヘッダー定義に沿って配置し、
-    継続行（B列などに "$" 指定がある行）の場合は、同じ親パス内でグループ化して配列要素として追加します。
+    継続行の場合は、B列に "$1" や "$2" などが記載されている行で、そのディレクティブに合わせて
+    対応する位置にマージしていきます。  
     """
     def __init__(self, ws, header_definition):
         self.ws = ws
@@ -89,8 +182,8 @@ class RowDataProcessor:
 
     def _update_record_with_header(self, record, header_defs, value):
         """
-        ヘッダー定義に沿って record の指定位置に value を設定する。
-        もし配列指定子があり、かつ末端の場合は、その配列に直接値を追加します。
+        ヘッダー定義に沿って record の指定位置に value を設定します。
+        配列指定子がない場合は単純なネスト更新、指定子がある場合は先頭で処理します。
         """
         arr_index = None
         for idx, level in enumerate(header_defs):
@@ -99,7 +192,7 @@ class RowDataProcessor:
                 break
 
         if arr_index is None:
-            # 配列指定子がない場合は単純なネスト更新
+            # 配列指定子がない：単純にネストを更新
             current = record
             for j, level in enumerate(header_defs):
                 key = level["key"]
@@ -110,7 +203,7 @@ class RowDataProcessor:
                         current[key] = {}
                     current = current[key]
         else:
-            # 配列指定子が存在する場合
+            # 配列指定子が存在する場合は、先頭のレコードに設定
             parent_path = [l["key"] for l in header_defs[:arr_index]]
             array_key = header_defs[arr_index]["key"]
             sub_keys = [l["key"] for l in header_defs[arr_index+1:]]
@@ -120,7 +213,6 @@ class RowDataProcessor:
                     current[key] = {}
                 current = current[key]
             if not sub_keys:
-                # 末端の場合は、直接値を配列に追加
                 if array_key not in current or not isinstance(current[array_key], list):
                     current[array_key] = []
                 current[array_key].append(value)
@@ -152,50 +244,18 @@ class RowDataProcessor:
                 self._update_record_with_header(new_record, header_defs, cell_val)
             i += 1
 
-            # 継続行の処理（複数列にわたる配列指定子の更新）
+            # 継続行の処理：
+            # 「B列」に "$1" や "$2" などが記載されている限り継続行として処理する
+            continuation_merger = ContinuationMerger(self.header_mapping, self.ws)
             while i < len(self.rows):
                 next_row = self.rows[i]
-                directive = None
-                if len(next_row) > 1:
-                    directive = next_row[1].value
-                if directive is None:
+                # B列（2番目のセル）を取得。空欄なら継続行終了とみなす
+                directive = next_row[1].value if len(next_row) > 1 else None
+                if directive is None or directive == "":
                     break
-
-                cont_updates = {}  # key: (親キータプル, 配列キー)、value: 更新用（dictまたはlist）
-                cont_row_num = next_row[0].row
-                for col_letter, header_defs in self.header_mapping.items():
-                    for idx, level in enumerate(header_defs):
-                        if level.get("arr") == f'${directive}':
-                            parent_path = tuple(l["key"] for l in header_defs[:idx])
-                            array_key = header_defs[idx]["key"]
-                            sub_keys = [l["key"] for l in header_defs[idx+1:]]
-                            col_idx = column_index_from_string(col_letter)
-                            cell_val = self.ws.cell(row=cont_row_num, column=col_idx).value
-                            key = (parent_path, array_key)
-                            if key not in cont_updates:
-                                if sub_keys:
-                                    cont_updates[key] = {}
-                                else:
-                                    cont_updates[key] = []
-                            if sub_keys:
-                                self._nested_update(cont_updates[key], sub_keys, cell_val)
-                            else:
-                                cont_updates[key].append(cell_val)
-                            break
-
-                # 継続行の更新内容を該当する親階層の配列に追加する
-                for (parent_path, array_key), update_val in cont_updates.items():
-                    current = new_record
-                    for k in parent_path:
-                        if k not in current or not isinstance(current[k], dict):
-                            current[k] = {}
-                        current = current[k]
-                    if array_key not in current:
-                        current[array_key] = []
-                    if isinstance(update_val, list):
-                        current[array_key].extend(update_val)
-                    else:
-                        current[array_key].append(update_val)
+                # ディレクティブが "$" で始まる場合のみ適用（例: "$1", "$2"）
+                if isinstance(directive, str) and directive.startswith("$"):
+                    new_record = continuation_merger.merge_row(new_record, next_row)
                 i += 1
 
             data_list.append(new_record)
