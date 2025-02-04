@@ -93,7 +93,15 @@ class HeaderDefinition:
                     col_letter = get_column_letter(cell.column)
                     if col_letter not in self.hierarchy:
                         self.hierarchy[col_letter] = []
-                    self.hierarchy[col_letter].extend(header_defs)
+                    # 同じキー名$グループ名の定義が複数ある場合は、既に存在しているなら追加せず1つに統合する
+                    for hd in header_defs:
+                        duplicate_found = False
+                        for existing in self.hierarchy[col_letter]:
+                            if existing["key"] == hd["key"] and existing.get("arr") == hd.get("arr"):
+                                duplicate_found = True
+                                break
+                        if not duplicate_found:
+                            self.hierarchy[col_letter].append(hd)
 
 class ContinuationMerger:
     """
@@ -104,55 +112,144 @@ class ContinuationMerger:
         self.header_mapping = header_mapping
         self.ws = ws
 
+    def create_path(self, data, path_list, create_new_list_item=False):
+        """
+        指定された `path_list` の階層を `data` に作成し、最も深い階層の辞書を返す。
+        
+        - `create_new_list_item` が True の場合、リストの末尾に新しい辞書を追加する。
+        """
+        if not isinstance(data, dict):
+            raise TypeError("data must be a dictionary")
+
+        if not path_list:
+            return data
+
+        current = data
+        for i, key in enumerate(path_list):
+            if isinstance(current, list):
+                if create_new_list_item:
+                    new_item = {}
+                    current.append(new_item)
+                    current = new_item
+                else:
+                    if len(current) == 0:
+                        current.append({})
+                    current = current[-1]
+            
+            if not isinstance(current, dict):
+                raise TypeError(f"Path conflict: {key} cannot be added to a non-dict object")
+
+            if key not in current:
+                if i == len(path_list) - 1 and create_new_list_item:
+                    current[key] = []
+                else:
+                    current[key] = {}
+
+            current = current[key]
+
+        return current
+
     def merge_row(self, record, cont_row):
-        # B列（2番目のセル）からディレクティブを取得
-        directive = cont_row[1].value if len(cont_row) > 1 else None
-        if not directive or not isinstance(directive, str) or not directive.startswith("$"):
-            return record  # 空欄または "$" で始まらない場合は処理しない
-        # 各列に対して、ヘッダー定義の中から該当ディレクティブの位置を探す
-        for col_letter, header_defs in self.header_mapping.items():
-            for idx, level in enumerate(header_defs):
-                if level.get("arr") == directive:
-                    # 該当するヘッダー定義の階層情報を分解
-                    parent_path = [l["key"] for l in header_defs[:idx]]
-                    array_key = header_defs[idx]["key"]
-                    sub_keys = [l["key"] for l in header_defs[idx+1:]]
-                    col_idx = column_index_from_string(col_letter)
-                    cell_val = self.ws.cell(row=cont_row[0].row, column=col_idx).value
-                    # 新規または既存の親オブジェクトにアクセス
-                    current = record
-                    for key in parent_path:
+        """
+        継続行（Excel の継続行）の cell_val を、
+        ヘッダー定義に沿って record（JSON用dict）の適切な位置にマージします。
+        
+        ※修正後は、例えばヘッダー定義が "#rules$1enzan" や "#rules$1moji" の場合、
+        　出力されるJSONでは「rules」の配列内のオブジェクトのキーが直接 "enzan" や "moji"
+        　となり、同じディレクティブ（例："$1"）の項目は１つのオブジェクトとしてマージされます。
+        """
+        # cont_row が dict でない場合は整形（従来の実装に準じた処理）
+        if not isinstance(cont_row, dict):
+            new_cont_row = {}
+            def nested_set(rec, keys, value):
+                current = rec
+                for i, key in enumerate(keys):
+                    if i == len(keys) - 1:
+                        current[key] = value
+                    else:
                         if key not in current or not isinstance(current[key], dict):
                             current[key] = {}
                         current = current[key]
-                    # 配列キーがなければ新規作成
-                    if array_key not in current:
-                        current[array_key] = []
-                    # sub_keys が存在するなら、既存の末尾オブジェクトにマージ、
-                    # なければ新規作成してリストに追加する
-                    if sub_keys:
-                        if current[array_key] and isinstance(current[array_key][-1], dict):
-                            self._nested_update(current[array_key][-1], sub_keys, cell_val)
-                        else:
-                            new_obj = {}
-                            self._nested_update(new_obj, sub_keys, cell_val)
-                            current[array_key].append(new_obj)
-                    else:
-                        current[array_key].append(cell_val)
-                    break  # 1列につき1度処理すればよいのでbreak
-        return record
+            for cell in cont_row:
+                if self.ws.cell(row=cell.row, column=cell.column).column == 2:
+                    new_cont_row["B"] = cell.value
+                    break
+            for col_letter, defs in self.header_mapping.items():
+                if col_letter == "B":
+                    continue
+                for cell in cont_row:
+                    if get_column_letter(cell.column) == col_letter:
+                        cell_value = cell.value
+                        keys = [d["key"] for d in defs]
+                        nested_set(new_cont_row, keys, cell_value)
+                        break
+            cont_row = new_cont_row
 
-    def _nested_update(self, d, keys, value):
-        """シンプルにネストされた辞書を更新します。"""
-        if not keys:
-            return
-        key = keys[0]
-        if len(keys) == 1:
-            d[key] = value
-        else:
-            if key not in d or not isinstance(d[key], dict):
-                d[key] = {}
-            self._nested_update(d[key], keys[1:], value)
+        directive = cont_row.get("B")
+        if directive is None or directive == "":
+            return record
+
+        def get_nested_value(rec, keys):
+            current = rec
+            for key in keys:
+                if not isinstance(current, dict) or key not in current:
+                    return None
+                current = current[key]
+            return current
+
+        # 対象列ごとに処理を行い、該当ディレクティブならその位置にマージする
+        for col_letter, header_defs in self.header_mapping.items():
+            keys = [d["key"] for d in header_defs]
+            cell_val = get_nested_value(cont_row, keys)
+            for idx, level in enumerate(header_defs):
+                if level.get("arr") == f'${directive}':
+                    parent_path = [l["key"] for l in header_defs[:idx]]
+                    array_key = header_defs[idx]["key"]
+                    # header_defs[idx+1:] の各キーのうち、最後のキーを更新対象とする
+                    sub_keys = [l["key"] for l in header_defs[idx+1:]]
+                    
+                    # 親の辞書を取得
+                    current = self.create_path(record, parent_path) if parent_path else record
+                    
+                    if array_key not in current or not isinstance(current[array_key], list):
+                        current[array_key] = []
+                    
+                    # 同じディレクティブに対応するオブジェクトが既にあれば取得、
+                    # なければ新たに作成（内部的に _directive キーで識別）
+                    target_obj = None
+                    for obj in current[array_key]:
+                        if isinstance(obj, dict) and obj.get("_directive") == directive:
+                            target_obj = obj
+                            break
+                    if target_obj is None:
+                        target_obj = {"_directive": directive}
+                        current[array_key].append(target_obj)
+                    
+                    # sub_keys が存在する場合、更新するキーを最後の要素にする
+                    if sub_keys:
+                        update_key = sub_keys[-1]
+                    else:
+                        update_key = None
+                    if update_key:
+                        target_obj[update_key] = cell_val
+
+        # 内部用の _directive キーは削除しておく
+        for col_letter, header_defs in self.header_mapping.items():
+            for idx, level in enumerate(header_defs):
+                if level.get("arr") is not None:
+                    parent_path = [l["key"] for l in header_defs[:idx]]
+                    array_key = header_defs[idx]["key"]
+                    current = record
+                    for key in parent_path:
+                        if key not in current:
+                            current = None
+                            break
+                        current = current[key]
+                    if current and array_key in current and isinstance(current[array_key], list):
+                        for obj in current[array_key]:
+                            if isinstance(obj, dict) and "_directive" in obj:
+                                del obj["_directive"]
+        return record
 
 
 class RowDataProcessor:
@@ -254,8 +351,8 @@ class RowDataProcessor:
                 if directive is None or directive == "":
                     break
                 # ディレクティブが "$" で始まる場合のみ適用（例: "$1", "$2"）
-                if isinstance(directive, str) and directive.startswith("$"):
-                    new_record = continuation_merger.merge_row(new_record, next_row)
+                #if isinstance(directive, str) and directive.startswith("$"):
+                new_record = continuation_merger.merge_row(new_record, next_row)
                 i += 1
 
             data_list.append(new_record)
