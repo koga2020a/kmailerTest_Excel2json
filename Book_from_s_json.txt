@@ -1,0 +1,9 @@
+HEAD		settings	settings	settings	settings	settings	settings	settings	[]mailSets	[]mailSets	[]mailSets	[]mailSets	[]mailSets	[]mailSets	[]mailSets	[]mailSets	[]mailSets	[]mailSets	[]mailSets	[]mailSets	[]mailSets	[]mailSets	[]mailSets
+HEAD		[]mailServers	[]mailServers	[]mailServers	[]mailServers	[]mailServers	[]mailServers	[]mailServers	mailSet	mailSet	mailSet	mailSet	mailSet	mailSet	mailSet	mailSet	[]mailTemplates	[]mailTemplates	[]mailTemplates	[]mailTemplates	[]mailTemplates	[]mailTemplates	[]mailTemplates
+HEAD		serverName	serverType	description	hostname	port	auth	auth	mailSetName	kintoneTemplateApiKey	kintoneTemplateAppId	kintoneAddressApiKey	kintoneAddressAppId	kintoneAddressToFieldCode	kintoneAddressCCFieldCode	kintoneAddressBCCFieldCode	kintoneTemplateRecordId	kintoneTemplateName	webhook	conditions	conditions	conditions	conditions
+HEAD							user	pass												operator	[]rules	[]rules	[]rules
+HEAD																					field	type	value
+DATA		mockServer	mock	Default mock server	smtp.sendgrid.net	587	apikey	SG.xxxxxxx	★申し込み案内だよな	WvYnx9TlCgDKtEqr5P5aswlILP80IMdgWJxf48v9	6	s5JT6wnhNb2KBIlYn42Q8Iu1YkDoXkYNYoqj0Uvf	8	fieldTo	fieldCC	fieldBCC	1A	申し込み_1A_テンプレート	kmailerMoshikomi_1A	OR	user	contains	佐藤
+DATA	*																				price	gte	10000
+DATA	*																				comment	contains	至急
+DATA	*																						

@@ -1,0 +1,36 @@
+settings:
+  mailServers:
+  - serverName: mockServer
+    serverType: mock
+    description: Default mock server
+    hostname: smtp.sendgrid.net
+    port: 587
+    auth:
+      user: apikey
+      pass: SG.xxxxxxx
+mailSets:
+- mailTemplates:
+  - kintoneTemplateRecordId: 1A
+    kintoneTemplateName: 申し込み_1A_テンプレート
+    webhook: kmailerMoshikomi_1A
+    conditions:
+      rules:
+      - field: user
+        type: contains
+        value: 佐藤
+      - field: price
+        type: gte
+        value: 10000
+      - field: comment
+        type: contains
+        value: 至急
+      operator: OR
+  mailSet:
+    mailSetName: ★申し込み案内だよな
+    kintoneTemplateApiKey: WvYnx9TlCgDKtEqr5P5aswlILP80IMdgWJxf48v9
+    kintoneTemplateAppId: 6
+    kintoneAddressApiKey: s5JT6wnhNb2KBIlYn42Q8Iu1YkDoXkYNYoqj0Uvf
+    kintoneAddressAppId: 8
+    kintoneAddressToFieldCode: fieldTo
+    kintoneAddressCCFieldCode: fieldCC
+    kintoneAddressBCCFieldCode: fieldBCC
