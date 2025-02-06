@@ -15,7 +15,6 @@ class StructureParser:
         for line in lines:
             if not line:
                 continue
-                
             if line[0] == 'HEAD':
                 self.process_head_line(line)
             elif line[0] == 'DATA':
@@ -49,7 +48,6 @@ class StructureParser:
         for line in lines:
             if len(line) < 2:
                 continue
-                
             if line[0] == 'DATA':
                 # 新しいグループの開始（2列目が空）または継続（2列目が*）
                 if not line[1].strip():  # 空の場合は新しいグループ開始
@@ -88,7 +86,6 @@ class StructureParser:
         path 内に "[]xxx" が複数含まれる場合、それぞれ配列として扱うが、
         最初の配列だけに対して `array_index` を適用し、2つ目以降の配列は「最後の要素を使う／無ければ新規作成」する。
         """
-
         # TRUE / FALSE / 数字 などの文字列をPythonの型に変換
         if value == "TRUE":
             value = True
@@ -140,49 +137,17 @@ class StructureParser:
             # 通常キー
             current[last_token] = value
 
-    def _process_data_group(self, group: List[List[str]]) -> None:
-        """
-        グループ化されたDATA行を処理する
-        """
-        if not group:
-            return
-
-        # 3列目以降の値を列ごとに集める
-        column_values = {}
-        for col_idx in range(2, len(group[0])):
-            values = []
-            for row in group:
-                if col_idx < len(row):
-                    value = row[col_idx].strip()
-                    if value:  # 空でない値のみ追加
-                        values.append(value)
-            if values:  # 値が存在する列のみ処理
-                column_values[col_idx] = values
-
-        # 列ごとの値を適切なパスに設定
-        array_index = self.get_array_index('')  # 最初の行は空欄なので
-        for col_idx, values in column_values.items():
-            if col_idx - 2 < len(self.column_paths):
-                path = self.column_paths[col_idx - 2]
-                if not path:
-                    continue
-                
-                if len(values) == 1:
-                    # 単一値の場合
-                    self.set_value_in_path(self.result, path, array_index, values[0])
-                else:
-                    # 複数値の場合は配列として設定
-                    self.set_array_values_in_path(self.result, path, array_index, values)
-
     def set_array_values_in_path(self, current: dict, path: List[str], array_index: int, values: List[str]) -> None:
         """
         パスに従って複数の値を配列として設定
         """
+        # 前段階のノードに移動
         for i, token in enumerate(path[:-1]):
             if token.startswith('[]'):
                 key = self.parse_array_header(token)
                 if key not in current:
                     current[key] = []
+                # array_index を使う（最初の [] だけ有効にするなら工夫が必要）
                 if array_index >= len(current[key]):
                     current[key].append({})
                 current = current[key][array_index]
@@ -196,15 +161,172 @@ class StructureParser:
             key = self.parse_array_header(last_token)
             if key not in current:
                 current[key] = []
-            current[key].extend(values)
+            # 配列に extend
+            current[key].extend(self._convert_values(values))
         else:
-            current[last_token] = values
+            # 単なるリストを直接突っ込む
+            current[last_token] = self._convert_values(values)
+
+    def _convert_values(self, values: List[str]) -> List[Any]:
+        """
+        TRUE/FALSE/数字 などを適切に変換したリストを返す
+        """
+        converted = []
+        for v in values:
+            if v == "TRUE":
+                converted.append(True)
+            elif v == "FALSE":
+                converted.append(False)
+            elif v.isdigit():
+                converted.append(int(v))
+            else:
+                converted.append(v)
+        return converted
+
+    def _process_data_group(self, group: List[List[str]]) -> None:
+        """
+        グループ化されたDATA行を処理する
+        """
+        if not group:
+            return
+
+        # 3列目以降の値を列ごとに集める
+        # column_values[col_idx] = [値1, 値2, ...]
+        column_values = {}
+        for col_idx in range(2, len(group[0])):  # 2列目までは無視
+            vals = []
+            for row in group:
+                if col_idx < len(row):
+                    v = row[col_idx].strip()
+                    if v:
+                        vals.append(v)
+            if vals:
+                column_values[col_idx] = vals
+
+        # まず、同じ「親パス」を共有する列をグループ化する
+        # 親パス: column_paths[col_idx - 2] のうち、最後のトークンを除いた部分
+        parent_path_map = {}
+        for col_idx, _ in column_values.items():
+            if (col_idx - 2) < len(self.column_paths):
+                full_path = self.column_paths[col_idx - 2]
+                if full_path:
+                    parent = tuple(full_path[:-1])  # 親パス
+                    last_token = full_path[-1]
+                    if parent not in parent_path_map:
+                        parent_path_map[parent] = []
+                    parent_path_map[parent].append((col_idx, last_token))
+
+        # 実際に処理する
+        array_index = self.get_array_index('')  # とりあえず最初のDATA行は空欄として0固定
+        processed_columns = set()  # 特別処理で使い終わった列は通常処理しない
+
+        for parent, cols_info in parent_path_map.items():
+            # parent が配列キー (例: ['[]rule']) を含むかどうか
+            # 末尾が "[]xxxxx" になっているか、あるいは途中にあるか、など
+            # 今回は「末尾に []rule があって、かつ last_token が field/type/value など複数…」を想定
+            # もう少し一般化して「parent の末尾が []xxx なら、それを配列オブジェクトにする」などと判定してもOK
+            if not parent:
+                continue  # 親パスがない場合はスキップ
+            
+            # 親パスの末尾が配列キーなら…という簡易判定
+            parent_last_token = parent[-1]
+            if not parent_last_token.startswith('[]'):
+                continue
+
+            # cols_info の例: [ (col_idx, "field"), (col_idx, "type"), (col_idx, "value") ]
+            # → 同じ配列に入るはずの複数列
+            if len(cols_info) < 2:
+                continue  # 1列しかないならまとめる意味ないのでスキップ
+
+            # 「このカラム群は 1行 = 1オブジェクト としてまとめる」のを想定
+            # group の各行について、cols_info の各列に値があれば、それらを { last_token: 値 } としてまとめる
+            # まとめたオブジェクトを parent パスの配列に append する
+
+            # 親パスをリスト化
+            parent_list = list(parent)
+            # parent の最後のトークン (例: "[]rule") は実際の追加先配列
+            parent_array_key = self.parse_array_header(parent_last_token)
+            # オブジェクトを追加する先を探す (parent のさらに一つ手前までをたどる)
+            # 例: parent = ["[]conditions", "[]rule"] の場合は、["[]conditions"] の最後の要素にある "rule" 配列
+            # ただし、実際には self.set_value_in_path と同じように辿る必要がある
+
+            # まず、「parent の最後のトークンを除いたパス」(= 配列の親の親) に移動する
+            actual_parent_path = parent_list[:-1]  # "[]rule" の手前まで
+            # ここで current を見つける
+            current = self.result
+            used_array_index = False
+            for token in actual_parent_path:
+                if token.startswith('[]'):
+                    k = self.parse_array_header(token)
+                    if k not in current:
+                        current[k] = []
+                    if not used_array_index:
+                        # 必要数だけ拡張
+                        while len(current[k]) <= array_index:
+                            current[k].append({})
+                        current = current[k][array_index]
+                        used_array_index = True
+                    else:
+                        if not current[k]:
+                            current[k].append({})
+                        current = current[k][-1]
+                else:
+                    if token not in current:
+                        current[token] = {}
+                    current = current[token]
+
+            # これで current は "[]rule" の直前のオブジェクト
+            # "[]rule" 自体を取得/初期化
+            if parent_array_key not in current:
+                current[parent_array_key] = []
+            rules_array = current[parent_array_key]
+
+            # cols_info を (col_idx の昇順) で固定
+            cols_info_sorted = sorted(cols_info, key=lambda x: x[0])
+
+            # group の各行についてオブジェクト化
+            for row in group:
+                # その行に対応する (col_idx, last_token) 列を探す
+                rule_obj = {}
+                value_found = False
+                for col_idx, last_token in cols_info_sorted:
+                    if col_idx < len(row):
+                        val = row[col_idx].strip()
+                        if val:
+                            # TRUE/FALSE/数字 変換
+                            val_converted = self._convert_values([val])[0]
+                            rule_obj[last_token] = val_converted
+                            value_found = True
+                if value_found:
+                    # 何らかの値があった場合のみ追加
+                    rules_array.append(rule_obj)
+
+            # この配列親パスに属する列は、通常処理（下の for col_idx, values in column_values のループ）から除外
+            for (col_idx, _) in cols_info:
+                processed_columns.add(col_idx)
+
+        # 上記で特別処理した列以外は、通常の set_value_in_path / set_array_values_in_path へ
+        for col_idx, values in column_values.items():
+            if col_idx in processed_columns:
+                # 既に特別処理した列はスキップ
+                continue
+            if (col_idx - 2) < len(self.column_paths):
+                path = self.column_paths[col_idx - 2]
+                if not path:
+                    continue
+                
+                if len(values) == 1:
+                    # 単一値の場合
+                    self.set_value_in_path(self.result, path, array_index, values[0])
+                else:
+                    # 複数値の場合は配列として設定
+                    self.set_array_values_in_path(self.result, path, array_index, values)
 
     def to_json(self) -> str:
         """結果をJSON文字列として返す"""
         return json.dumps(self.result, ensure_ascii=False, indent=2)
 
-# 使用例
+
 if __name__ == "__main__":
     parser = StructureParser()
     parser.parse_file("ExcelTypeCsv_input.txt")
