@@ -1,0 +1,71 @@
+- mailServers:
+    description: Default mock server
+    serverName: mockServer
+    serverType: mock
+- mailServers:
+    auth:
+      pass: SG.xxxxxxx
+      user: apikey
+    hostname: smtp.sendgrid.net
+    port: 587
+    serverName: sendgridServer1
+    serverType: sendgrid
+- mailServers:
+    auth:
+      pass: SG.yyyyyyy
+      user: apikey
+    hostname: smtp.sendgrid.net
+    port: 465
+    serverName: sendgridServer2
+    serverType: sendgrid
+- settings:
+    PORT: 3000
+    kintoneLogsApiKey: 8UpduLzy8ApjI8w95X7LAEyNtQEXDijMMQeA4gqL
+    kintoneLogsAppId: '10'
+    kintoneLogsFieldCode: logs
+    kintoneSettingsApiKey: exKuAuuOZT12EsdhgnlwT6Uj8hLG0uKp2HqxdKVM
+    kintoneSettingsAppId: '7'
+    kintoneSettingsAppJsonField: json_config
+    kintoneSettingsRecordId: '1'
+    mail_from_address: test@example.com
+    mail_from_name: 差出人名です
+    subdomain: 6rzyuy6y7jv1
+    useKintoneAsSettingsSource: true
+- mailSet:
+    kintoneAddressApiKey: s5JT6wnhNb2KBIlYn42Q8Iu1YkDoXkYNYoqj0Uvf
+    kintoneAddressAppId: '8'
+    kintoneAddressBCCFieldCode: fieldBCC
+    kintoneAddressCCFieldCode: fieldCC
+    kintoneAddressToFieldCode: fieldTo
+    kintoneTemplateApiKey: WvYnx9TlCgDKtEqr5P5aswlILP80IMdgWJxf48v9
+    kintoneTemplateAppId: '6'
+    mailSetName: ★申し込み案内だよな
+  mailTemplates:
+    kintoneTemplateName: 申し込み_1_テンプレート
+    kintoneTemplateRecordId: '1'
+    webhook: kmailerMoshikomi_1
+- mailSet:
+    kintoneAddressApiKey: pOBQtkzAnDhT2Qd9Ul9QY82Bw9QlEYTQlewx9qKQ
+    kintoneAddressAppId: '11'
+    kintoneAddressBCCFieldCode: fieldBCC
+    kintoneAddressCCFieldCode: fieldCC
+    kintoneAddressToFieldCode: fieldTo
+    kintoneTemplateApiKey: WvYnx9TlCgDKtEqr5P5aswlILP80IMdgWJxf48v9
+    kintoneTemplateAppId: '6'
+    mailSetName: ★申し込み案内_テーブル版だよな
+  mailTemplates:
+    conditions:
+      operator: OR
+      rules:
+      - field: user
+        type: contains
+        value: 佐藤
+      - field: price
+        type: gte
+        value: 10000
+      - field: comment
+        type: contains
+        value: 至急
+    kintoneTemplateName: 申し込み_2_テンプレート
+    kintoneTemplateRecordId: '1'
+    webhook: kmailerMoshikomi_2

@@ -1,5 +1,8 @@
 import json
 from typing import Dict, List, Any
+import yaml
+import sys
+
 
 class StructureParser:
     def __init__(self):
@@ -321,13 +324,51 @@ class StructureParser:
                 else:
                     # 複数値の場合は配列として設定
                     self.set_array_values_in_path(self.result, path, array_index, values)
-
     def to_json(self) -> str:
         """結果をJSON文字列として返す"""
         return json.dumps(self.result, ensure_ascii=False, indent=2)
 
+    def to_yaml(self) -> str:
+        """結果をYAML文字列として返す"""
+        return yaml.dump(self.result, allow_unicode=True, sort_keys=False)
+    
+def main():
+    # コマンドライン引数の処理
+    if len(sys.argv) < 2:
+        print("使用方法: python スクリプト名.py 入力ファイル [出力ファイル]")
+        sys.exit(1)
+
+    input_file = sys.argv[1]
+    
+    # 出力ファイル名の設定
+    if len(sys.argv) == 3:
+        output_file = sys.argv[2]
+    elif len(sys.argv) == 4:
+        output_file = sys.argv[2]
+        output_file_yaml = sys.argv[3]
+    else:
+        # 入力ファイル名から拡張子を除去し、.jsonを追加
+        output_file = input_file.rsplit('.', 1)[0] + '.json'
+        output_file_yaml = input_file.rsplit('.', 1)[0] + '.yaml'
+
+    try:
+        # データ処理をここに記述
+        parser = StructureParser()
+        parser.parse_file(input_file)
+                
+        # 結果を出力ファイルに保存
+        with open(output_file, 'w', encoding='utf-8') as f:
+            f.write(parser.to_json())
+        with open(output_file_yaml, 'w', encoding='utf-8') as f:
+            f.write(parser.to_yaml())
+        print(f"処理が完了しました。JSONファイル: {output_file}")
+        print(f"YAMLファイル: {output_file_yaml}")
+            
+
+    except FileNotFoundError:
+        print(f"エラー: ファイル '{input_file}' が見つかりません。")
+    except Exception as e:
+        print(f"エラーが発生しました: {str(e)}")
 
 if __name__ == "__main__":
-    parser = StructureParser()
-    parser.parse_file("ExcelTypeCsv_input.txt")
-    print(parser.to_json())
+    main()

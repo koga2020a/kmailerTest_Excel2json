@@ -1,0 +1,113 @@
+{
+  "settings": {
+    "useKintoneAsSettingsSource": true,
+    "subdomain": "6rzyuy6y7jv1",
+    "mail_from_name": "差出人名です",
+    "mail_from_address": "test@example.com",
+    "kintoneSettingsApiKey": "exKuAuuOZT12EsdhgnlwT6Uj8hLG0uKp2HqxdKVM",
+    "kintoneSettingsAppId": "7",
+    "kintoneSettingsRecordId": "1",
+    "kintoneSettingsAppJsonField": "json_config",
+    "kintoneLogsAppId": "10",
+    "kintoneLogsApiKey": "8UpduLzy8ApjI8w95X7LAEyNtQEXDijMMQeA4gqL",
+    "kintoneLogsFieldCode": "logs",
+    "mailServers": [
+      {
+        "serverName": "mockServer",
+        "serverType": "mock",
+        "description": "Default mock server"
+      },
+      {
+        "serverName": "sendgridServer1",
+        "serverType": "sendgrid",
+        "hostname": "smtp.sendgrid.net",
+        "port": 587,
+        "auth": {
+          "user": "apikey",
+          "pass": "SG.xxxxxxx"
+        }
+      },
+      {
+        "serverName": "sendgridServer2",
+        "serverType": "sendgrid",
+        "hostname": "smtp.sendgrid.net",
+        "port": 465,
+        "auth": {
+          "user": "apikey",
+          "pass": "SG.yyyyyyy"
+        }
+      }
+    ],
+    "PORT": 3000
+  },
+  "mailSets": [
+    {
+      "mailSet": {
+        "mailSetName": "★申し込み案内だよな",
+        "kintoneTemplateApiKey": "WvYnx9TlCgDKtEqr5P5aswlILP80IMdgWJxf48v9",
+        "kintoneTemplateAppId": "6",
+        "kintoneAddressApiKey": "s5JT6wnhNb2KBIlYn42Q8Iu1YkDoXkYNYoqj0Uvf",
+        "kintoneAddressAppId": "8",
+        "kintoneAddressToFieldCode": "fieldTo",
+        "kintoneAddressCCFieldCode": "fieldCC",
+        "kintoneAddressBCCFieldCode": "fieldBCC"
+      },
+      "mailTemplates": [
+        {
+          "kintoneTemplateRecordId": "1A",
+          "kintoneTemplateName": "申し込み_1A_テンプレート",
+          "webhook": "kmailerMoshikomi_1A"
+        },
+        {
+          "kintoneTemplateRecordId": "2",
+          "kintoneTemplateName": "申し込み_1B_テンプレート",
+          "webhook": "kmailerMoshikomi_1B"
+        },
+        {
+          "kintoneTemplateRecordId": "3",
+          "kintoneTemplateName": "申し込み_1C_テンプレート",
+          "webhook": "kmailerMoshikomi_1C"
+        }
+      ]
+    },
+    {
+      "mailSet": {
+        "mailSetName": "★申し込み案内_テーブル版だよな",
+        "kintoneTemplateApiKey": "WvYnx9TlCgDKtEqr5P5aswlILP80IMdgWJxf48v9",
+        "kintoneTemplateAppId": "6",
+        "kintoneAddressApiKey": "pOBQtkzAnDhT2Qd9Ul9QY82Bw9QlEYTQlewx9qKQ",
+        "kintoneAddressAppId": "11",
+        "kintoneAddressToFieldCode": "fieldTo",
+        "kintoneAddressCCFieldCode": "fieldCC",
+        "kintoneAddressBCCFieldCode": "fieldBCC"
+      },
+      "mailTemplates": [
+        {
+          "kintoneTemplateRecordId": "1",
+          "kintoneTemplateName": "申し込み_2_テンプレート",
+          "webhook": "kmailerMoshikomi_2",
+          "conditions": {
+            "operator": "OR",
+            "rules": [
+              {
+                "field": "user",
+                "type": "contains",
+                "value": "佐藤"
+              },
+              {
+                "field": "price",
+                "type": "gte",
+                "value": 10000
+              },
+              {
+                "field": "comment",
+                "type": "contains",
+                "value": "至急"
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

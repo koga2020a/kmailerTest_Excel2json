@@ -1,0 +1,48 @@
+{
+  "settings": {
+    "mailServers": [
+      {
+        "serverName": "mockServer",
+        "serverType": "mock"
+      },
+      {
+        "serverName": "sendgrid",
+        "serverType": "sendgridServer1"
+      }
+    ],
+    "useKintoneAsSettingsSource": "True"
+  },
+  "mailsets": {
+    "mailset": [
+      {
+        "mailTemplates": [
+          {
+            "conditions": [
+              {
+                "rule": [
+                  {
+                    "field": "user",
+                    "type": "contains",
+                    "value": "佐藤"
+                  },
+                  {
+                    "field": "price",
+                    "type": "gte",
+                    "value": 10000
+                  },
+                  {
+                    "field": "comment",
+                    "type": "contains",
+                    "value": "至急"
+                  }
+                ]
+              }
+            ],
+            "TemplateName": "申し込み_1A_テンプレート"
+          }
+        ],
+        "mailSetName": "★申し込み案内だよな"
+      }
+    ]
+  }
+}

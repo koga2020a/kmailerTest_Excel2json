@@ -1,0 +1,134 @@
+{
+  "settings": {
+    // kintone から settings.json を取得するかどうか
+    "useKintoneAsSettingsSource": true,
+    "subdomain": "6rzyuy6y7jv1",
+
+    // 差出人情報
+    "mail_from_name": "差出人名です",
+    "mail_from_address": "test@example.com",
+    
+    // kintone 上の設定レコードの取得先情報
+    "kintoneSettingsApiKey": "exKuAuuOZT12EsdhgnlwT6Uj8hLG0uKp2HqxdKVM",
+
+    // ↓ 新しく追加：アプリID と レコードID で1件を特定
+    "kintoneSettingsAppId": "7",      // 例: "7" (文字列でも数値でも可)
+    "kintoneSettingsRecordId": "1",    // 例: "1"
+
+    // 取得したレコードの中に JSON文字列が格納されているフィールド
+    "kintoneSettingsAppJsonField": "json_config",
+
+    "kintoneLogsAppId": "10",      // 例: "7" (文字列でも数値でも可)
+    "kintoneLogsApiKey": "8UpduLzy8ApjI8w95X7LAEyNtQEXDijMMQeA4gqL",         
+    "kintoneLogsFieldCode": "logs",    // 例: "logs"
+
+    // メールサーバの一覧 (複数登録可能)
+    "mailServers": [
+      {
+        "serverName": "mockServer",
+        "serverType": "mock",
+        "description": "Default mock server"
+      },
+      {
+        "serverName": "sendgridServer1",
+        "serverType": "sendgrid",
+        "hostname": "smtp.sendgrid.net",
+        "port": 587,
+        "auth": {
+          "user": "apikey",
+          "pass": "SG.xxxxxxx"
+        }
+      },
+      {
+        "serverName": "sendgridServer2",
+        "serverType": "sendgrid",
+        "hostname": "smtp.sendgrid.net",
+        "port": 465,
+        "auth": {
+          "user": "apikey",
+          "pass": "SG.yyyyyyy"
+        }
+      }
+    ],
+
+    // ローカルサーバ基本設定 (例: Node.js の起動ポート)
+    "PORT": 3000
+  },
+
+  "mailSets": [
+    {
+      "mailSet": {
+        "mailSetName": "★申し込み案内だよな",
+
+        "kintoneTemplateApiKey": "WvYnx9TlCgDKtEqr5P5aswlILP80IMdgWJxf48v9",
+        "kintoneTemplateAppId": "6",      // 例: "7" (文字列でも数値でも可)
+
+
+        "kintoneAddressApiKey": "s5JT6wnhNb2KBIlYn42Q8Iu1YkDoXkYNYoqj0Uvf",   // 不要 Toのフィールドコード名をリストアップする為に使うが、json直書なら不要
+        "kintoneAddressAppId": "8",     // 不要 Toのフィールドコード名をリストアップする為に使うが、json直書なら不要
+        "kintoneAddressToFieldCode": "fieldTo",
+        "kintoneAddressCCFieldCode": "fieldCC",
+        "kintoneAddressBCCFieldCode": "fieldBCC"
+      },
+      "mailTemplates": [
+        {
+          "kintoneTemplateRecordId": "1A",    // 例: "1"
+          "kintoneTemplateName": "申し込み_1A_テンプレート", 
+          "webhook": "kmailerMoshikomi_1A"
+        },
+        {
+          "kintoneTemplateRecordId": "2",    // 例: "1"
+          "kintoneTemplateName": "申し込み_1B_テンプレート", 
+          "webhook": "kmailerMoshikomi_1B"
+        },
+        {
+          "kintoneTemplateRecordId": "3",    // 例: "1"
+          "kintoneTemplateName": "申し込み_1C_テンプレート", 
+          "webhook": "kmailerMoshikomi_1C"
+        }
+      ]
+    },
+    {
+      "mailSet": {
+        "mailSetName": "★申し込み案内_テーブル版だよな",
+
+        "kintoneTemplateApiKey": "WvYnx9TlCgDKtEqr5P5aswlILP80IMdgWJxf48v9",
+        "kintoneTemplateAppId": "6",      // 例: "7" (文字列でも数値でも可)
+
+
+        "kintoneAddressApiKey": "pOBQtkzAnDhT2Qd9Ul9QY82Bw9QlEYTQlewx9qKQ",   // 不要 Toのフィールドコード名をリストアップする為に使うが、json直書なら不要
+        "kintoneAddressAppId": "11",     // 不要 Toのフィールドコード名をリストアップする為に使うが、json直書なら不要
+        "kintoneAddressToFieldCode": "fieldTo",
+        "kintoneAddressCCFieldCode": "fieldCC",
+        "kintoneAddressBCCFieldCode": "fieldBCC"
+      },
+      "mailTemplates": [
+        {
+          "kintoneTemplateRecordId": "1",    // 例: "1"
+          "kintoneTemplateName": "申し込み_2_テンプレート", 
+          "webhook": "kmailerMoshikomi_2",
+          "conditions": {
+            "operator": "OR",  // "AND": 全ての条件を満たす, "OR": いずれかの条件を満たす
+            "rules": [
+              {
+                "field": "user",           // フィールド名
+                "type": "contains",            // 条件種類: equals(等しい), contains(含む), gt(>), lt(<), gte(>=), lte(<=), notEquals(!=)
+                "value": "佐藤"
+              },
+              {
+                "field": "price",
+                "type": "gte",
+                "value": 10000
+              },
+              {
+                "field": "comment",
+                "type": "contains",
+                "value": "至急"
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

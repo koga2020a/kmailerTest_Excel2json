@@ -4,7 +4,7 @@ HEAD			serverName	serverType	mailSetName	[]mailTemplates	[]mailTemplates	[]mailT
 HEAD						TemplateName	[]conditions	[]conditions	[]conditions
 HEAD							[]rule	[]rule	[]rule
 HEAD							field	type	value
-DATA		TRUE	mockServer	mock					
+DATA		True	mockServer	mock					
 DATA	*		sendgrid	sendgridServer1					
 DATA					★申し込み案内だよな	申し込み_1A_テンプレート	user	contains	佐藤
 DATA	*						price	gte	10000
