@@ -1,0 +1,3 @@
+LAYOUT,name,age,contacts[],<,address[],<,<,<
+LAYOUT,,,type,value,street,city,zipcode,coordinates[],<,
+LAYOUT,,,,,,,,lat,lon
