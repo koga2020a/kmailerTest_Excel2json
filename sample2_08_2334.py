@@ -3,7 +3,55 @@ import json
 import sys
 import string
 from dataclasses import dataclass, field
-from typing import Optional, List, Dict
+from typing import Optional, List, Dict, Tuple
+
+
+class CsvPreprocessor:
+    """CSVの前処理を行うクラス"""
+    def __init__(self, csv_filename: str):
+        self.filename = csv_filename
+        self.raw_data: List[List[str]] = []
+        self.layout_ranges: List[Tuple[int, int]] = []  # [(開始行, 終了行), ...]
+
+    def load_csv(self) -> None:
+        """CSVファイルを読み込む"""
+        with open(self.filename, newline='', encoding='utf-8') as f:
+            self.raw_data = list(csv.reader(f))
+
+    def extract_layout_sections(self) -> None:
+        """LAYOUTセクションの範囲を特定"""
+        current_start = None
+        
+        for i, row in enumerate(self.raw_data):
+            if not row:  # 空行をスキップ
+                continue
+                
+            is_layout = row[0].strip().upper() == "LAYOUT"
+            
+            if is_layout and current_start is None:
+                current_start = i
+            elif not is_layout and current_start is not None:
+                self.layout_ranges.append((current_start, i - 1))
+                current_start = None
+        
+        # 最後のセクションが終了マークなしで終わっている場合
+        if current_start is not None:
+            self.layout_ranges.append((current_start, len(self.raw_data) - 1))
+
+    def get_processed_data(self) -> List[List[List[str]]]:
+        """各LAYOUTセクションのデータを1列目を除いて取得"""
+        processed_sections = []
+        
+        for start, end in self.layout_ranges:
+            # 範囲内の行を取得し、1列目を除去
+            section_data = [
+                row[1:] for row in self.raw_data[start:end + 1]
+                if row and len(row) > 1  # 少なくとも2列あることを確認
+            ]
+            if section_data:  # 空でないセクションのみ追加
+                processed_sections.append(section_data)
+        
+        return processed_sections
 
 
 @dataclass
@@ -144,16 +192,30 @@ class CsvStructure:
         self.matrix = CsvMatrix()
         self.group_manager = GroupManager()
 
-    def parse_csv(self, csv_filename: str) -> None:
-        """CSVファイルを解析"""
-        with open(csv_filename, newline='', encoding='utf-8') as f:
-            reader = list(csv.reader(f))
+    def process_csv(self, csv_filename: str) -> List[dict]:
+        """CSVファイルを処理し、各LAYOUTセクションの構造を解析"""
+        preprocessor = CsvPreprocessor(csv_filename)
+        preprocessor.load_csv()
+        preprocessor.extract_layout_sections()
+        
+        sections_data = preprocessor.get_processed_data()
+        results = []
+        
+        for section_data in sections_data:
+            self.matrix = CsvMatrix()  # 新しいセクションごとにマトリックスをリセット
+            self.group_manager = GroupManager()  # グループマネージャーもリセット
+            self._process_section(section_data)
+            results.append(self.to_dict())
+        
+        return results
 
-        self.matrix.max_row = len(reader)
-        self.matrix.max_col = max(len(row) for row in reader)
+    def _process_section(self, section_data: List[List[str]]) -> None:
+        """セクションデータを処理"""
+        self.matrix.max_row = len(section_data)
+        self.matrix.max_col = max(len(row) for row in section_data)
 
         # セルの作成
-        for row_idx, row in enumerate(reader):
+        for row_idx, row in enumerate(section_data):
             for col_idx, value in enumerate(row):
                 position = Position(row_idx, col_idx)
                 cell = Cell(position, value)
@@ -182,7 +244,6 @@ class CsvStructure:
 
     def _set_parents(self) -> None:
         """親子関係を設定"""
-        # グループをソート（行の位置に基づく）
         sorted_groups = sorted(
             self.group_manager.groups.values(),
             key=lambda g: min(c.position.row for c in g.cells)
@@ -210,9 +271,6 @@ class CsvStructure:
             }
         }
 
-    def __repr__(self) -> str:
-        return json.dumps(self.to_dict(), indent=4, ensure_ascii=False)
-
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
@@ -221,5 +279,9 @@ if __name__ == "__main__":
 
     filename = sys.argv[1]
     csv_structure = CsvStructure()
-    csv_structure.parse_csv(filename)
-    print(csv_structure)
+    results = csv_structure.process_csv(filename)
+    
+    # 各セクションの結果を出力
+    for i, result in enumerate(results, 1):
+        print(f"\nSection {i}:")
+        print(json.dumps(result, indent=4, ensure_ascii=False))
