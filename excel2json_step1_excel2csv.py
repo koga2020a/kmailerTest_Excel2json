@@ -43,13 +43,13 @@ def process_excel(
         layout_start_row = int(start_cell[1:])
 
         # LAYOUTの行を探す
-        layout_row = find_layout_row(sheet, layout_start_row)
-        if layout_row is None:
+        layout_rows = find_layout_row(sheet, layout_start_row)
+        if not layout_rows:
             raise ValueError("LAYOUT row not found")
-        layout_last_row = find_layout_last_row(sheet, layout_start_row)
+        layout_last_row = layout_rows[-1]
 
         # 対象となる列を特定（1列目は常に含める）
-        target_cols = [start_col] + find_target_columns(sheet, start_col, layout_row)
+        target_cols = [start_col] + find_target_columns(sheet, start_col, layout_rows)
         
         csv_layout = create_csv_layout(sheet, layout_start_row, target_cols)
 
@@ -67,16 +67,17 @@ def process_excel(
         print(f"Error processing Excel file: {str(e)}")
         sys.exit(1)
 
-def find_layout_row(sheet, start_row: int) -> Optional[int]:
+def find_layout_row(sheet, start_row: int) -> List[int]:
     """
-    LAYOUT行を探す
+    LAYOUT行をすべて探して返す
     """
     max_row = sheet.max_row
+    layout_rows = []
     for row in range(start_row, max_row + 1):
         cell_value = str(sheet.cell(row=row, column=1).value or '').upper()
         if cell_value == 'LAYOUT':
-            return row
-    return None
+            layout_rows.append(row)
+    return layout_rows
 
 def find_layout_last_row(sheet, start_row: int) -> Optional[int]:
     """
@@ -108,33 +109,36 @@ def create_csv_layout(sheet, layout_start_row: int, target_cols: List[int]) -> L
                 #print(f'row:{row} col:{col} value:{value}')
 
                 row_data.append(value)
+            if all(x == '' for x in row_data[1:]):
+                continue
             layout_rows.append(row_data)
     return layout_rows
 
 
 
-def find_target_columns(sheet, start_col: int, layout_row: int) -> List[int]:
+def find_target_columns(sheet, start_col: int, layout_rows: List[int]) -> List[int]:
     """
     プレフィックスが#である値を含む列を特定する
-
+    LAYOUTの全行を対象に検索する
     """
-    target_cols = []
+    target_cols = set()  # 重複を避けるためにsetを使用
     max_col = sheet.max_column
     
-    for col in range(start_col + 1, max_col + 1):  # 2列目以降を検査
-        cell = sheet.cell(row=layout_row, column=col)
-        
-        # 結合セルの処理
-        if cell.coordinate in sheet.merged_cells:
-            merge_range = next(range for range in sheet.merged_cells.ranges if cell.coordinate in range)
-            value = sheet.cell(row=merge_range.min_row, column=merge_range.min_col).value
-        else:
-            value = cell.value
+    for layout_row in layout_rows:
+        for col in range(start_col + 1, max_col + 1):  # 2列目以降を検査
+            cell = sheet.cell(row=layout_row, column=col)
             
-        if value and isinstance(value, str) and value.startswith('#'):
-            target_cols.append(col)
+            # 結合セルの処理
+            if cell.coordinate in sheet.merged_cells:
+                merge_range = next(range for range in sheet.merged_cells.ranges if cell.coordinate in range)
+                value = sheet.cell(row=merge_range.min_row, column=merge_range.min_col).value
+            else:
+                value = cell.value
+                
+            if value and isinstance(value, str) and value.startswith('#'):
+                target_cols.add(col)
     
-    return target_cols
+    return sorted(list(target_cols))  # ソートして返す
 
 def find_target_range(sheet, layout_last_row: int, target_cols: List[int]) -> TargetRange:
     """
@@ -191,7 +195,7 @@ def create_csv_data(sheet, target_range: TargetRange) -> List[List[str]]:
 
 def process_layout_cell_value(sheet, row: int, col: int, check_prefix: bool = True) -> str:
     """
-    セルの値を処理する
+    LAYOUT行のセルの値を処理する
     """
     cell = sheet.cell(row=row, column=col)
     
@@ -200,44 +204,57 @@ def process_layout_cell_value(sheet, row: int, col: int, check_prefix: bool = Tr
         merge_range = next(range for range in sheet.merged_cells.ranges if cell.coordinate in range)
         if cell.coordinate == merge_range.start_cell.coordinate:
             value = cell.value
+            if check_prefix and value and isinstance(value, str):
+                if value.startswith('#'):
+                    value = value[1:]  # #を除去
+                else:
+                    value = ""  # #で始まるセルでなければ除外する
+        else:
+            # 結合セルの左上端の値を確認
+            start_cell_value = sheet.cell(row=merge_range.min_row, column=merge_range.min_col).value
+            if check_prefix and start_cell_value and isinstance(start_cell_value, str) and start_cell_value.startswith('#'):
+                return '<'  # 結合セルの左上端が#で始まる場合のみ'<'を返す
+            return ''  # それ以外は空文字を返す
+    else:
+        value = cell.value
+        if check_prefix and value and isinstance(value, str):
             if value.startswith('#'):
                 value = value[1:]  # #を除去
             else:
-                value = "" # #で始まるセルでなければ除外する
-        else:
-            return '<'
+                value = ""  # #で始まるセルでなければ除外する
     
-    # 通常のセル
-    value = cell.value
-    if check_prefix and value and isinstance(value, str):
-        if value.startswith('#'):
-            value = value[1:]  # #を除去
-        else:
-            value = "" # #で始まるセルでなければ除外する
     return str(value) if value is not None else ''
-
 
 def process_cell_value(sheet, row: int, col: int, check_prefix: bool = True) -> str:
     """
-    セルの値を処理する
+    通常のセルの値を処理する
     """
     cell = sheet.cell(row=row, column=col)
     
     # 連結セルのチェック
     if cell.coordinate in sheet.merged_cells:
         merge_range = next(range for range in sheet.merged_cells.ranges if cell.coordinate in range)
-        if cell.coordinate == merge_range.start_cell.coordinate:
-            value = cell.value
-            if check_prefix and value and isinstance(value, str) and value.startswith('#'):
-                value = value[1:]  # #を除去
-            return value
+        # 縦方向の結合セルかどうかを確認
+        is_vertical_merge = merge_range.min_col == merge_range.max_col
+        
+        if is_vertical_merge:
+            # 縦方向の結合の場合、先頭セル以外は空文字を返す
+            if cell.coordinate == merge_range.start_cell.coordinate:
+                value = cell.value
+            else:
+                return ''
         else:
-            return '<'
-    
-    # 通常のセル
-    value = cell.value
+            # 横方向の結合の場合
+            if row == merge_range.min_row:  # 結合セルの最上行の場合
+                value = sheet.cell(row=merge_range.min_row, column=merge_range.min_col).value
+            else:
+                return ''  # 最上行以外は空文字を返す
+    else:
+        value = cell.value
+
     if check_prefix and value and isinstance(value, str) and value.startswith('#'):
         value = value[1:]  # #を除去
+    
     return str(value) if value is not None else ''
 
 def write_csv(filename: str, data: List[List[str]]) -> None:
