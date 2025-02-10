@@ -1,5 +1,6 @@
 import json
 import sys
+import argparse
 from collections import defaultdict
 from typing import Any, Dict, List, Tuple
 
@@ -13,6 +14,9 @@ class JsonToTxtConverter:
         # 各カラムパスに対応するすべての値のリスト
         # 例: {("foo",): ["val1", "val2"], ...}
         self.path_to_values: Dict[Tuple[str, ...], List[Any]] = defaultdict(list)
+        # True の場合、LAYOUT 行で同じキーが連続しているときの置換処理をスキップする
+        # （デフォルトでは連続キーは「<」に置換します）
+        self.disable_duplicate_layout: bool = False
 
     def load_json(self, filename: str) -> None:
         """
@@ -25,9 +29,8 @@ class JsonToTxtConverter:
         # カラムパスは path_to_values のキーから作成
         # ※再帰処理内で sorted() を使っているので、ここでのグローバルソートは不要です
         self.column_paths = [list(path) for path in self.path_to_values.keys()]
-        # 以下のグローバルソートは削除またはコメントアウトする
+        # もしグローバルソートを行うと親キー内での順序が崩れるため、ここではソートしません。
         # self.column_paths.sort(key=lambda p: (len(p), p))
-
 
     def _reset_state(self) -> None:
         """
@@ -84,6 +87,21 @@ class JsonToTxtConverter:
             for path in self.column_paths:
                 # カラムパスが現在の深さを持っていれば、"#" を付けて出力
                 row.append(f"#{path[depth]}" if len(path) > depth else "")
+            # もし duplicate キーの連続置換処理が有効なら実施する
+            if not self.disable_duplicate_layout:
+                last_key = None
+                # 先頭の2セルはタイトル等なので、インデックス2以降を処理
+                for i in range(2, len(row)):
+                    # 空文字は処理対象外
+                    if row[i] != "":
+                        if last_key is not None and row[i] == last_key:
+                            row[i] = "<"
+                        else:
+                            last_key = row[i]
+                    else:
+                        # 空文字の場合は last_key をリセットしない
+                        # ※必要に応じて処理を変更してください
+                        last_key = row[i]
             lines.append("\t".join(row))
 
         # DATA 行の生成
@@ -135,14 +153,23 @@ class JsonToTxtConverter:
 
 
 def main():
-    if len(sys.argv) < 2:
-        print("使い方: python json_to_txt.py input.json [output.txt]")
-        sys.exit(1)
+    parser = argparse.ArgumentParser(
+        description="JSON を読み込み、LAYOUT/DATA 形式の TXT を出力します。"
+    )
+    parser.add_argument("input_json", help="入力 JSON ファイル")
+    parser.add_argument("output_txt", nargs="?", help="出力 TXT ファイル（省略時は入力ファイル名の拡張子を .txt にしたもの）")
+    parser.add_argument(
+        "--no-layout-dup",
+        action="store_true",
+        help="LAYOUT 行での連続する同一キーの置換処理を行わない（連続キーをそのまま出力する）"
+    )
+    args = parser.parse_args()
 
-    input_json_file = sys.argv[1]
-    output_txt_file = sys.argv[2] if len(sys.argv) >= 3 else input_json_file.rsplit('.', 1)[0] + '.txt'
+    input_json_file = args.input_json
+    output_txt_file = args.output_txt if args.output_txt else input_json_file.rsplit('.', 1)[0] + '.txt'
 
     converter = JsonToTxtConverter()
+    converter.disable_duplicate_layout = args.no_layout_dup
     converter.load_json(input_json_file)
     converter.write_txt(output_txt_file)
     print(f"変換が完了しました: {output_txt_file}")

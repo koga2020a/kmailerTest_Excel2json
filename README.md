@@ -14,17 +14,27 @@
 ## 構成ファイル
 - `excel2json_step1_excel2csv.py`: ExcelファイルからCSV形式への変換
 - `excel2json_step2_csv2json.py`: CSV形式からJSONへの変換
+- `json2ExcelTypeTxt.py`: JSONからExcel形式のテキストへの変換
 
 ## データ形式
 
 ### Excel形式の構造
 データは以下のような形式で表現されます：
 
+#### 例1：シンプルな階層構造
 ```
-LAYOUT    [階層1]       [階層2]       [階層3]
-LAYOUT    [配列名][]    [項目名]      #[オプション項目]
-DATA      値1           値2           値3
-DATA   *  継続値1       継続値2       継続値3
+LAYOUT    user          name
+LAYOUT    user          age
+DATA      田中太郎      25
+DATA      山田花子      30
+```
+
+#### 例2：配列を含む階層構造
+```
+LAYOUT    settings      colors[]      name
+LAYOUT    settings      colors[]      code
+DATA      基本設定      赤           #FF0000
+DATA   *               青           #0000FF
 ```
 
 ### 特殊行の説明
@@ -32,76 +42,88 @@ DATA   *  継続値1       継続値2       継続値3
 - `DATA`: 実データを含む行
 - `DATA *`: 配列要素の継続行を示す
 - `START`: データブロックの開始（オプション）
-- `END`/`FINISH`/`FIN`: データブロックの終了
-- `NONE`/`NOT`/`NO`: 無視される行
+- `END`: データブロックの終了
 
 ### 特殊記法
-- `[]`: 配列を示す（例：`users[]`）
+- `[]`: 配列を示す（例：`colors[]`）
 - `#`: オプション項目を示すプレフィックス
-- `<`: 上のセルの値を継承（マージセル）
-- `*`: 継続行を示すマーカー（2列目）
+- `<`: 上のセルの値を継承
+- `*`: 継続行を示すマーカー
 
 ## 使用方法
 
 ### ExcelからJSONへの変換
 
-1. ExcelからCSVへの変換：
+#### 例1：基本的な変換
 ```bash
-python excel2json_step1_excel2csv.py input.xlsx [--sheet シート名] [--start 開始セル]
+python excel2json_step1_excel2csv.py input.xlsx
+python excel2json_step2_csv2json.py input.csv
 ```
 
-2. CSVからJSONへの変換：
+#### 例2：シート指定での変換
 ```bash
-python excel2json_step2_csv2json.py output.csv
+python excel2json_step1_excel2csv.py input.xlsx --sheet "データ" --start B2
+python excel2json_step2_csv2json.py input.csv
 ```
 
-### 入力例
-Excel:
-```
-LAYOUT    users         name
-LAYOUT    users[]       auth
-DATA      user1         password123
-DATA   *   user2        password456
+### JSONからExcelテキスト形式への変換
+
+```bash
+python json2ExcelTypeTxt.py input.json output.txt
 ```
 
-出力JSON:
+## 入力例と出力例
+
+### 例1：シンプルな構造
+
+入力（Excel）:
+```
+LAYOUT    user          name
+LAYOUT    user          age
+DATA      田中太郎      25
+```
+
+出力（JSON）:
 ```json
 {
-    "users": [
+    "user": {
+        "name": "田中太郎",
+        "age": 25
+    }
+}
+```
+
+### 例2：配列構造
+
+入力（Excel）:
+```
+LAYOUT    colors[]      name
+LAYOUT    colors[]      code
+DATA      赤           #FF0000
+DATA   *  青           #0000FF
+```
+
+出力（JSON）:
+```json
+{
+    "colors": [
         {
-            "name": "user1",
-            "auth": "password123"
+            "name": "赤",
+            "code": "#FF0000"
         },
         {
-            "name": "user2",
-            "auth": "password456"
+            "name": "青",
+            "code": "#0000FF"
         }
     ]
 }
 ```
-
-## 高度な機能
-
-### マージセルのサポート
-- 縦方向マージ：配列要素の継続を示す
-- 横方向マージ：同一値の繰り返しを簡略化
-
-### データ型の自動認識
-- 整数値の自動変換
-- 小数値の自動変換
-- 文字列型の保持
-
-### 継続行による柔軟なデータ構造
-- 配列要素の追加
-- 既存要素の更新
-- 複雑な階層構造の表現
 
 ## 動作要件
 - Python 3.6以上
 - 必要なライブラリ：
   - openpyxl
   - pyyaml
-  - typing
 
 ## インストール
 ```bash
@@ -110,13 +132,7 @@ pip install openpyxl pyyaml
 
 ## 制限事項
 - 循環参照を含むJSONは非対応
-- 非常に大規模なデータの場合、メモリ使用量に注意
-- 特定の複雑なJSON構造では表現が困難な場合あり
-
-## エラー処理
-- 不正なExcelフォーマット時のエラーメッセージ
-- シート不在時の適切なエラー通知
-- データ型変換エラーの適切な処理
+- 非常に大規模なデータの場合、メモリ使用量に注意が必要
 
 ## ライセンス
 このプロジェクトはMITライセンスの下で公開されています。
