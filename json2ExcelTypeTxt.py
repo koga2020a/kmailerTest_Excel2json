@@ -6,7 +6,7 @@ from typing import Any, Dict, List, Tuple, Union
 
 class JsonToTxtConverter:
     def __init__(self):
-        # カラムパス（例: [["foo"], ["foo", "[]bar", "value"], ...]）を格納
+        # カラムパス（例: [["foo"], ["foo[]", "value"], ...]）を格納
         self.column_paths: List[List[str]] = []
         # 各カラムパスに対応するすべての値のリスト
         # 例: {tuple_path: ["val1", "val2"], ...}
@@ -26,26 +26,22 @@ class JsonToTxtConverter:
     def _traverse_json(self, node: Any, path: List[str]):
         """
         JSON を再帰的に走査し、leaf まで到達したら (path, value) を記録する。
-        配列なら "[]key" というトークンで path を作り直して辿る。
+        配列なら "key[]" というトークンで path を作り直して辿る。
         """
         if isinstance(node, dict):
             for k, v in node.items():
-                # オブジェクト: キーを追加して再帰
                 self._traverse_json(v, path + [k])
         elif isinstance(node, list):
-            # リストの場合は、直前のキー名がわかるようにする
-            # 例: path の末尾が "hoge" なら、それを []hoge に置き換える形にする
             if not path:
-                # ルート直下が配列の場合など。キー名がないため "[]ROOT" 的なものを仮置きしても良い
-                array_key = "[]ROOT"
+                # ルート直下が配列の場合など
+                array_key = "ROOT[]"
                 new_path = path + [array_key]
                 for item in node:
                     self._traverse_json(item, new_path)
             else:
-                # path の末尾の通常キーを取り出し、 "[]末尾キー" に差し替える
+                # 末尾キーを "キー[]" に変更
                 *parent_tokens, last_key = path
-                array_key = f"[]{last_key}"
-                # 既存の末尾を置き換え
+                array_key = f"{last_key}[]"
                 new_path = parent_tokens + [array_key]
                 for item in node:
                     self._traverse_json(item, new_path)
@@ -64,42 +60,30 @@ class JsonToTxtConverter:
         # まずはカラムパスの最大深度を求める
         max_depth = max(len(p) for p in self.column_paths)
 
-        # HEAD 行を作る
-        # i 行目では「各カラム p の i 番目のトークン」を列 i に書く (なければ空)
-        # ただし、最初の2列は 'HEAD', '' を固定し、3列目以降にトークンを書く
-        # 行を深さ max_depth ぶん作る
+        # LAYOUT 行を作る（HEAD を LAYOUT に変更）
         for depth in range(max_depth):
-            # 行の先頭2列
-            row = ["HEAD", ""]
-            # 各カラム p における depth 番目のトークンを入れる（なければ空文字）
+            row = ["LAYOUT", ""]  # HEAD を LAYOUT に変更
             for p in self.column_paths:
                 if len(p) > depth:
-                    row.append(p[depth])
+                    row.append(f"#{p[depth]}")  # 値の前に # を追加
                 else:
                     row.append("")
             lines.append("\t".join(row))
 
-        # 次に DATA 行を作る
-        #
-        # 各カラムパスについて、値の数だけ縦に並べたいので
-        # 「列ごとに持っている値の最大数」を見る
+        # DATA 行を作る
         max_values_count = max(len(self.path_to_values[tuple(p)]) for p in self.column_paths)
 
-        # 行は、「一番長いカラムの値数」だけ作り、その中で各カラムが i 番目の値を持つなら出す
-        # i=0 の行は 2 列目を空欄、 i>=1 の行は 2 列目を "*"
         for i in range(max_values_count):
-            # row の先頭2列
+            # i=0 の行はマーカーなし、i>=1 の行は "*" マーカー
             if i == 0:
                 base_row = ["DATA", ""]
             else:
-                base_row = ["DATA", "*"]
+                base_row = ["*", ""]  # DATA を * に変更（継続行）
 
-            # カラム毎に i 番目の値があれば出す
             for p in self.column_paths:
                 values = self.path_to_values[tuple(p)]
                 if i < len(values):
                     val = values[i]
-                    # Python の型 → txt 用の文字列へ
                     txt_val = self._to_str(val)
                 else:
                     txt_val = ""
