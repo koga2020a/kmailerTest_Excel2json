@@ -23,9 +23,11 @@ class JsonToTxtConverter:
         self._reset_state()
         self._collect_leaf_paths(self.data, path=[])
         # カラムパスは path_to_values のキーから作成
+        # ※再帰処理内で sorted() を使っているので、ここでのグローバルソートは不要です
         self.column_paths = [list(path) for path in self.path_to_values.keys()]
-        # 一貫性のため、カラムパスを (深さ, 値) の順にソート（任意）
-        self.column_paths.sort(key=lambda p: (len(p), p))
+        # 以下のグローバルソートは削除またはコメントアウトする
+        # self.column_paths.sort(key=lambda p: (len(p), p))
+
 
     def _reset_state(self) -> None:
         """
@@ -39,12 +41,16 @@ class JsonToTxtConverter:
         """
         JSON を再帰的に探索し、leaf（dict でも list でもない値）に到達した場合に
         現在のパスと値を内部状態に記録する。
-        
+
         配列の場合はキーに "[]" を付与して区別する。
+
+        また、dict のキーはソートして処理することで、親キーに属する子キーの範囲内で
+        ソートした状態を保証する。
         """
         if isinstance(node, dict):
-            for key, value in node.items():
-                self._collect_leaf_paths(value, path + [key])
+            # dict のキーをソートしてから処理する
+            for key in sorted(node.keys()):
+                self._collect_leaf_paths(node[key], path + [key])
         elif isinstance(node, list):
             if not path:
                 # ルート直下が配列の場合
