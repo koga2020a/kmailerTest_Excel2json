@@ -171,7 +171,7 @@ def merge_yaml_dicts(yaml_str1: str, yaml_str2: str) -> Dict[str, Any]:
     for doc in yaml.safe_load_all(combined_yaml):
         for key, value in doc.items():
             if key in merged_dict:
-                print(f'value: {value}')
+                #print(f'value: {value}')
                 if isinstance(merged_dict[key], list):
                     # リストの場合、最も深い階層のリストを見つけてマージ
                     deepest_list = find_deepest_list(merged_dict[key])
@@ -216,12 +216,12 @@ def process_record_group(rows: List[List[str]], col_to_path: Dict[int, List[Tupl
     for i in range(1, len(rows)):
         second_record = create_nested_record(rows[i], col_to_path, num_cols)
         second_yaml = yaml.dump(second_record, allow_unicode=True)
-        print(f"second_record (YAML):\n{second_yaml}")
+        #print(f"second_record (YAML):\n{second_yaml}")
 
         # YAML ベースでマージ
         merged_dict = merge_yaml_dicts(base_yaml, second_yaml)
         base_yaml = yaml.dump(merged_dict, allow_unicode=True)  # YAML に戻す
-        print(f"merged_dict (YAML):\n{base_yaml}")
+        #print(f"merged_dict (YAML):\n{base_yaml}")
 
     # 最終的に YAML を辞書に戻す
     record = yaml.safe_load(base_yaml)
@@ -322,6 +322,10 @@ if __name__ == "__main__":
         sys.exit(1)
     filename = sys.argv[1]
     result = process_csv(filename)
-    # ヘッダー解析結果とレコード情報をまとめて出力
-    #print(json.dumps(result, indent=4, ensure_ascii=False))
+    # recordsの最初のオブジェクトのみを出力
+    if result["records"]:
+        print(json.dumps(result["records"], indent=4, ensure_ascii=False))
+    else:
+        print("{}")
+
     
