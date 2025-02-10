@@ -1,0 +1,22 @@
+[
+  {
+    "name": null,
+    "age": true,
+    "contacts": [
+      {
+        "type": null,
+        "address": []
+      }
+    ]
+  },
+  {
+    "name": null,
+    "age": true,
+    "contacts": [
+      {
+        "type": null,
+        "address": []
+      }
+    ]
+  }
+]

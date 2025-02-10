@@ -1,0 +1,7 @@
+LAYOUT,, name, age, contacts[], <, address[], <, <, <, <, preferences, <, <
+LAYOUT,, , , type, value, street, city, zipcode, location[], <, newsletter, notifications, <
+LAYOUT,, , , , , , , , lat, lon, , email, sms
+DATA,,John Doe,30, email, john@example.com, *123 Main St, New York,10001,40.7128,-74.006, , *true,  
+DATA,* , ,, phone,123456789, *456 Second St, Los Angeles,90001,34.0522,-118.2437, , *true, false
+DATA,,Schot,22, email,schot@example.com, *123 Main St, New York,10001,40.7128,-74.006, , *true,  
+DATA,* , ,, phone,123456789, *456 Second St, Los Angeles,90001,34.0522,-118.2437, , *true, false

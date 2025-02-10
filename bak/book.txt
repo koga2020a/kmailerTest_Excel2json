@@ -1,0 +1,11 @@
+HEAD		settings	settings	settings	mailsets	mailsets	mailsets	mailsets	mailsets
+HEAD		useKintoneAsSettingsSource	[]mailServers	[]mailServers	[]mailset	[]mailset	[]mailset	[]mailset	[]mailset
+HEAD			serverName	serverType	mailSetName	[]mailTemplates	[]mailTemplates	[]mailTemplates	[]mailTemplates
+HEAD						TemplateName	[]conditions	[]conditions	[]conditions
+HEAD							[]rule	[]rule	[]rule
+HEAD							field	type	value
+DATA		True	mockServer	mock					
+DATA	*		sendgrid	sendgridServer1					
+DATA					★申し込み案内だよな	申し込み_1A_テンプレート	user	contains	佐藤
+DATA	*						price	gte	10000
+DATA	*						comment	contains	至急

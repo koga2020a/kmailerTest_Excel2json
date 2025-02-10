@@ -1,4 +1,5 @@
 import yaml
+import json
 from typing import Any, Optional, Tuple, List
 
 class LiteralString(str): pass
@@ -25,7 +26,11 @@ def merge_yaml_arrays(yaml_str1: str, yaml_str2: str) -> str:
     """
     try:
         # Parse YAML strings
-        data1 = yaml.safe_load(yaml_str1)
+        data1 = yaml.full_load(yaml_str1)
+        print(yaml_str1)
+        print(data1)
+        print(yaml.dump(data1, allow_unicode=True))
+        print(json.dumps(data1, indent=2))
         data2 = yaml.safe_load(yaml_str2)
         
         def find_deepest_array(data: Any, path: Optional[List] = None) -> Optional[Tuple[List, List]]:
@@ -117,6 +122,7 @@ def merge_yaml_arrays(yaml_str1: str, yaml_str2: str) -> str:
                 return [process_multiline_strings(item) for item in data]
             elif isinstance(data, str) and '\n' in data:
                 return LiteralString(data.rstrip())
+
             return data
 
         # Find the deepest arrays in both structures
@@ -132,7 +138,7 @@ def merge_yaml_arrays(yaml_str1: str, yaml_str2: str) -> str:
         # Get the arrays to merge
         target_array1 = get_nested_value(data1, path1)
         target_array2 = get_nested_value(data2, path2)
-        
+
         # Merge arrays
         merged_array = []
         for item in target_array1:
@@ -168,18 +174,18 @@ if __name__ == "__main__":
 a:
 - a1:
   - a2:
-      - eee
-      - bbb
-        bbbb
-      - ccc
-        cccc
+      - typ:aaa
+        blu:bbb
+      - typ:ccc
+        blu:ddd
 """
 
     yaml_str2 = """
 a:
 - a1:
   - a2:
-      - TTT
+      - typ:TTT
+        blu:RRR
 """
 
     try:

@@ -1,105 +1,122 @@
-以下のようなREADME.mdを作成いたしました：
-
-```markdown
-# JSON-Excel 相互変換ツール
+# Excel-JSON 相互変換ツール
 
 ## 概要
-このツールは、複雑なJSON構造をExcelの表形式で編集可能な形式に変換し、その逆変換も可能にするユーティリティです。
+このツールは、複雑なJSON構造をExcelで編集可能な形式に変換し、その逆変換も可能にする高機能な変換ユーティリティです。特に、階層構造を持つJSONデータの視覚的な編集を容易にすることを目的としています。
 
 ## 特徴
-- JSONの階層構造を2次元の表形式で表現
-- 配列要素を縦方向に展開して視覚的に理解しやすい形式に変換
-- Excelでの編集が容易な形式を採用
-- 日本語を完全にサポート
+- 複雑なJSONの階層構造を見やすい表形式で表現
+- 配列要素の縦方向展開による直感的な表現
+- マージセルを活用した効率的なデータ表現
+- 日本語を完全サポート
+- 数値型の自動認識機能
+- 継続行による柔軟なデータ入力
 
 ## 構成ファイル
-- `json2ExcelTypeTxt.py`: JSONからExcel互換のタブ区切りテキストに変換
-- `step1_Excel2txt.py`: Excelファイルからタブ区切りテキストに変換
-- その他変換スクリプト（未提供）
+- `excel2json_step1_excel2csv.py`: ExcelファイルからCSV形式への変換
+- `excel2json_step2_csv2json.py`: CSV形式からJSONへの変換
 
 ## データ形式
 
-### Excel/テキスト形式の構造
-データは以下の形式で表現されます：
+### Excel形式の構造
+データは以下のような形式で表現されます：
 
 ```
-HEAD    　　　　[列1の階層1]   [列1の階層2]   [列2の階層1]
-HEAD    　　　　[列1の階層2]   　　　　　　   [列2の階層2]
-DATA    　　　　[値1-1]        [値1-2]        [値2-1]
-DATA    *      [値2-1]        [値2-2]        [値2-2]
+LAYOUT    [階層1]       [階層2]       [階層3]
+LAYOUT    [配列名][]    [項目名]      #[オプション項目]
+DATA      値1           値2           値3
+DATA   *  継続値1       継続値2       継続値3
 ```
 
-特殊行の説明：
-- `HEAD`: 階層構造を表現する行
+### 特殊行の説明
+- `LAYOUT`: 階層構造を定義する行
 - `DATA`: 実データを含む行
-- `DATA_START`/`DATA_END`: データブロックの開始と終了を示す
-- `NONE`: 無視される行
+- `DATA *`: 配列要素の継続行を示す
+- `START`: データブロックの開始（オプション）
+- `END`/`FINISH`/`FIN`: データブロックの終了
+- `NONE`/`NOT`/`NO`: 無視される行
 
 ### 特殊記法
-- `[]配列名`: 配列を示す特殊な記法
-- `#`: HEADでの省略可能な項目を示すプレフィックス
-- `*`: 2列目の`*`は配列の継続を示す
+- `[]`: 配列を示す（例：`users[]`）
+- `#`: オプション項目を示すプレフィックス
+- `<`: 上のセルの値を継承（マージセル）
+- `*`: 継続行を示すマーカー（2列目）
 
 ## 使用方法
 
-### JSONからExcel形式への変換
+### ExcelからJSONへの変換
+
+1. ExcelからCSVへの変換：
 ```bash
-python json2ExcelTypeTxt.py input.json [output.txt]
+python excel2json_step1_excel2csv.py input.xlsx [--sheet シート名] [--start 開始セル]
 ```
 
-### Excelからテキスト形式への変換
+2. CSVからJSONへの変換：
 ```bash
-python step1_Excel2txt.py input.xlsx [シート名]
+python excel2json_step2_csv2json.py output.csv
 ```
 
-## 入力例
+### 入力例
+Excel:
+```
+LAYOUT    users         name
+LAYOUT    users[]       auth
+DATA      user1         password123
+DATA   *   user2        password456
+```
+
+出力JSON:
 ```json
 {
-  "mailServers": [
-    {
-      "serverName": "mockServer",
-      "serverType": "mock",
-      "auth": {
-        "user": "apikey",
-        "pass": "xxxxx"
-      }
-    }
-  ]
+    "users": [
+        {
+            "name": "user1",
+            "auth": "password123"
+        },
+        {
+            "name": "user2",
+            "auth": "password456"
+        }
+    ]
 }
 ```
 
-出力例（タブ区切りテキスト）：
-```
-HEAD    　　　　mailServers    serverName
-HEAD    　　　　[]mailServers  auth
-DATA    　　　　mockServer     apikey
-```
+## 高度な機能
 
-## 注意事項
-- Excelファイルは`xlsx`形式を使用してください
-- 文字エンコーディングはUTF-8を使用します
-- 配列要素は縦方向に展開されます
-- HEAD行の指定は正確に行う必要があります
+### マージセルのサポート
+- 縦方向マージ：配列要素の継続を示す
+- 横方向マージ：同一値の繰り返しを簡略化
 
-## 制限事項
-- 非常に大きなJSONファイルの場合、メモリ使用量が増加する可能性があります
-- 循環参照を含むJSONは正しく処理できません
-- 特定の複雑なJSON構造では、表現が困難な場合があります
+### データ型の自動認識
+- 整数値の自動変換
+- 小数値の自動変換
+- 文字列型の保持
 
-## 動作環境
+### 継続行による柔軟なデータ構造
+- 配列要素の追加
+- 既存要素の更新
+- 複雑な階層構造の表現
+
+## 動作要件
 - Python 3.6以上
 - 必要なライブラリ：
   - openpyxl
-  - json（標準ライブラリ）
+  - pyyaml
+  - typing
 
 ## インストール
 ```bash
-pip install openpyxl
+pip install openpyxl pyyaml
 ```
+
+## 制限事項
+- 循環参照を含むJSONは非対応
+- 非常に大規模なデータの場合、メモリ使用量に注意
+- 特定の複雑なJSON構造では表現が困難な場合あり
+
+## エラー処理
+- 不正なExcelフォーマット時のエラーメッセージ
+- シート不在時の適切なエラー通知
+- データ型変換エラーの適切な処理
 
 ## ライセンス
 このプロジェクトはMITライセンスの下で公開されています。
-
-```
-
-このREADME.mdは、提供されたコードの機能を詳細に説明し、使用方法や注意点を明確にしています。必要に応じて、さらなる詳細や例を追加することも可能です。

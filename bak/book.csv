@@ -1,0 +1,11 @@
+LAYOUT,settings,<,<,mailsets,mailsets,mailsets,mailsets,mailsets
+LAYOUT,useKintoneAsSettingsSource,mailServers[],<,mailset[],<,<,<,<
+LAYOUT,,serverName,serverType,mailSetName,mailTemplates[],<,<,<
+LAYOUT,,,,,TemplateName,conditions[],<,<
+LAYOUT,,,,,,rule[],<,<
+LAYOUT,,,,,,field,type,value
+,true,mockServer,mock,,,,,
+*,,sendgrid,sendgridServer1,,,,,
+,,,,★申し込み案内だよ2な,申し込み_1A_テンプレート,user,contains,佐藤
+*,,,,,,price,gte,10000
+*,,,,,,comment,contains,至急
